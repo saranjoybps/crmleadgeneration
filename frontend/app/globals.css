@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --surface-background:
+    radial-gradient(circle at 5% 8%, rgba(188, 200, 255, 0.45) 0%, transparent 32%),
+    radial-gradient(circle at 95% 12%, rgba(206, 182, 255, 0.4) 0%, transparent 30%),
+    linear-gradient(180deg, #f5f6ff 0%, #f1f4ff 50%, #eef2ff 100%);
+  --dashboard-bg: #f7f8ff;
+  --panel-bg: #ffffff;
+  --card-bg: #ffffff;
+  --card-muted-bg: #f8fafc;
+  --border-soft: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --font-sans: "Satoshi", "Manrope", "Nunito Sans", "Segoe UI", sans-serif;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-background:
+    radial-gradient(circle at 8% 8%, rgba(57, 79, 152, 0.32) 0%, transparent 36%),
+    radial-gradient(circle at 94% 12%, rgba(100, 70, 172, 0.26) 0%, transparent 34%),
+    linear-gradient(180deg, #0d1221 0%, #12172a 48%, #0f1528 100%);
+  --dashboard-bg: #13182c;
+  --panel-bg: #161d34;
+  --card-bg: #1b243f;
+  --card-muted-bg: #243050;
+  --border-soft: #344161;
+  --text-main: #e5ecff;
+  --text-muted: #b7c3e0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--surface-background);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+}
+
+@layer utilities {
+  .surface-panel {
+    background-color: var(--panel-bg);
+  }
+
+  .surface-card {
+    background-color: var(--card-bg);
+    border-color: var(--border-soft);
+  }
+
+  .surface-muted {
+    background-color: var(--card-muted-bg);
+  }
+
+  .text-main {
+    color: var(--text-main);
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  .border-soft {
+    border-color: var(--border-soft);
+  }
+}
