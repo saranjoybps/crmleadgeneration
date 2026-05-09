@@ -4,234 +4,94 @@ create extension if not exists "citext";
 -- ----------
 -- Types
 -- ----------
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'organization_role') then
-    create type public.organization_role as enum ('owner', 'admin', 'member');
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'app_role') then
+    create type public.app_role as enum ('owner', 'admin', 'member');
   end if;
 end $$;
 
 -- ----------
--- Core Tables
+-- Core tenant and access tables
 -- ----------
-create table if not exists public.organizations (
+create table if not exists public.tenants (
   id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
+  domain text null,
   contact_email text null,
-  phone text null,
-  mobile text null,
-  website text null,
-  address text null,
-  city text null,
-  state text null,
-  people_range text null,
   created_by uuid null references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint organizations_slug_format check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
+  constraint tenants_slug_format check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')
 );
 
-alter table if exists public.organizations add column if not exists contact_email text null;
-alter table if exists public.organizations add column if not exists phone text null;
-alter table if exists public.organizations add column if not exists mobile text null;
-alter table if exists public.organizations add column if not exists website text null;
-alter table if exists public.organizations add column if not exists address text null;
-alter table if exists public.organizations add column if not exists city text null;
-alter table if exists public.organizations add column if not exists state text null;
-alter table if exists public.organizations add column if not exists people_range text null;
-
-create table if not exists public.organization_members (
+create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  email citext not null,
-  role public.organization_role not null default 'member',
-  status text not null default 'active',
+  auth_user_id uuid not null unique references auth.users(id) on delete cascade,
+  email citext not null unique,
+  full_name text null,
+  avatar_url text null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.roles (
+  id uuid primary key default gen_random_uuid(),
+  key public.app_role not null unique,
+  label text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.user_tenant_roles (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  role_id uuid not null references public.roles(id) on delete restrict,
+  is_active boolean not null default true,
+  created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint organization_members_status_valid check (status in ('active', 'invited', 'suspended')),
-  constraint organization_members_unique_user unique (organization_id, user_id),
-  constraint organization_members_unique_email unique (organization_id, email)
+  constraint user_tenant_roles_unique unique (tenant_id, user_id)
 );
 
-create table if not exists public.organization_invites (
+create table if not exists public.tenant_invites (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
   email citext not null,
-  role public.organization_role not null default 'member',
+  role_id uuid not null references public.roles(id) on delete restrict,
   token_hash text not null unique,
-  invited_by uuid null references auth.users(id) on delete set null,
+  invited_by uuid null references public.users(id) on delete set null,
   status text not null default 'pending',
   expires_at timestamptz not null,
   accepted_at timestamptz null,
-  accepted_by uuid null references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint organization_invites_status_valid check (status in ('pending', 'accepted', 'revoked', 'expired'))
-);
-
-create table if not exists public.campaigns (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  name text not null,
-  industries jsonb not null default '[]'::jsonb,
-  sources jsonb not null default '[]'::jsonb,
-  location text not null default '',
-  created_by uuid null references auth.users(id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.leads (
-  id uuid primary key default gen_random_uuid(),
-  campaign_id uuid not null references public.campaigns(id) on delete cascade,
-  name text not null,
-  phone text null,
-  email text null,
-  website text null,
-  source text not null,
-  raw_data jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  constraint tenant_invites_status_valid check (status in ('pending', 'accepted', 'revoked', 'expired'))
 );
 
 -- ----------
--- Legacy Compatibility + Backfill
--- ----------
-alter table if exists public.campaigns add column if not exists organization_id uuid references public.organizations(id) on delete cascade;
-alter table if exists public.campaigns add column if not exists created_by uuid references auth.users(id) on delete set null;
-
-do $$
-begin
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'campaigns'
-      and column_name = 'user_id'
-  ) then
-    execute '
-      update public.campaigns
-      set created_by = user_id
-      where created_by is null and user_id is not null
-    ';
-  end if;
-end $$;
-
-insert into public.organizations (slug, name, created_by)
-select
-  concat('org-', substring(replace(u.id::text, '-', '') from 1 for 8)),
-  concat(coalesce(nullif(split_part(u.email, '@', 1), ''), 'Workspace'), ' Workspace'),
-  u.id
-from auth.users u
-where exists (
-  select 1
-  from public.campaigns c
-  where c.created_by = u.id
-)
-on conflict (slug) do nothing;
-
-insert into public.organization_members (organization_id, user_id, email, role, status)
-select
-  o.id,
-  u.id,
-  coalesce(nullif(u.email, ''), concat('unknown+', u.id::text, '@local.invalid')),
-  'owner'::public.organization_role,
-  'active'
-from public.organizations o
-join auth.users u on u.id = o.created_by
-on conflict (organization_id, user_id)
-do update set
-  email = excluded.email,
-  role = 'owner'::public.organization_role,
-  status = 'active',
-  updated_at = now();
-
-update public.campaigns c
-set organization_id = o.id
-from public.organizations o
-where c.organization_id is null and c.created_by = o.created_by;
-
-update public.campaigns c
-set organization_id = m.organization_id
-from public.organization_members m
-where c.organization_id is null
-  and c.created_by = m.user_id
-  and m.status = 'active';
-
-do $$
-begin
-  if not exists (select 1 from public.campaigns where organization_id is null) then
-    alter table public.campaigns alter column organization_id set not null;
-  end if;
-end $$;
-
-drop policy if exists "campaigns_select_own" on public.campaigns;
-drop policy if exists "campaigns_insert_own" on public.campaigns;
-drop policy if exists "campaigns_update_own" on public.campaigns;
-drop policy if exists "campaigns_delete_own" on public.campaigns;
-drop policy if exists "leads_select_campaign_owner" on public.leads;
-drop policy if exists "leads_insert_campaign_owner" on public.leads;
-drop policy if exists "leads_update_campaign_owner" on public.leads;
-drop policy if exists "leads_delete_campaign_owner" on public.leads;
-
-alter table if exists public.campaigns drop column if exists user_id;
-
--- ----------
--- Indexes
--- ----------
-create unique index if not exists idx_organization_members_single_org_per_user
-  on public.organization_members(user_id)
-  where status = 'active';
-
-create index if not exists idx_organization_members_org_id on public.organization_members(organization_id);
-create index if not exists idx_organization_members_user_id on public.organization_members(user_id);
-
-create unique index if not exists idx_organization_invites_org_email_pending
-  on public.organization_invites(organization_id, email)
-  where status = 'pending';
-
-create index if not exists idx_campaigns_organization_id on public.campaigns(organization_id);
-create index if not exists idx_campaigns_created_by on public.campaigns(created_by);
-create index if not exists idx_campaigns_created_at on public.campaigns(created_at desc);
-create index if not exists idx_leads_campaign_id on public.leads(campaign_id);
-create index if not exists idx_leads_source on public.leads(source);
-create index if not exists idx_leads_name on public.leads(name);
-
--- ----------
--- Triggers
+-- Triggers and helper functions
 -- ----------
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
-as $$
-begin
+as $$ begin
   new.updated_at := now();
   return new;
-end;
+end; $$;
+
+create or replace function public.current_app_user_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.id from public.users u where u.auth_user_id = auth.uid() limit 1;
 $$;
 
-drop trigger if exists trg_organizations_updated_at on public.organizations;
-create trigger trg_organizations_updated_at
-before update on public.organizations
-for each row execute function public.touch_updated_at();
-
-drop trigger if exists trg_organization_members_updated_at on public.organization_members;
-create trigger trg_organization_members_updated_at
-before update on public.organization_members
-for each row execute function public.touch_updated_at();
-
-drop trigger if exists trg_organization_invites_updated_at on public.organization_invites;
-create trigger trg_organization_invites_updated_at
-before update on public.organization_invites
-for each row execute function public.touch_updated_at();
-
--- ----------
--- Helper Functions
--- ----------
-create or replace function public.is_org_member(
-  p_organization_id uuid,
-  p_roles public.organization_role[] default null
-)
+create or replace function public.is_tenant_member(p_tenant_id uuid)
 returns boolean
 language sql
 stable
@@ -240,504 +100,341 @@ set search_path = public
 as $$
   select exists (
     select 1
-    from public.organization_members m
-    where m.organization_id = p_organization_id
-      and m.user_id = auth.uid()
-      and m.status = 'active'
-      and (
-        p_roles is null
-        or cardinality(p_roles) = 0
-        or m.role = any(p_roles)
-      )
+    from public.user_tenant_roles utr
+    where utr.tenant_id = p_tenant_id
+      and utr.user_id = public.current_app_user_id()
+      and utr.is_active = true
   );
 $$;
 
-create or replace function public.get_my_primary_org()
-returns table (
-  organization_id uuid,
-  organization_slug text,
-  organization_name text,
-  role public.organization_role
-)
+create or replace function public.has_tenant_role(p_tenant_id uuid, p_roles public.app_role[])
+returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select
-    o.id,
-    o.slug,
-    o.name,
-    m.role
-  from public.organization_members m
-  join public.organizations o on o.id = m.organization_id
-  where m.user_id = auth.uid()
-    and m.status = 'active'
-  order by m.created_at asc
-  limit 1;
+  select exists (
+    select 1
+    from public.user_tenant_roles utr
+    join public.roles r on r.id = utr.role_id
+    where utr.tenant_id = p_tenant_id
+      and utr.user_id = public.current_app_user_id()
+      and utr.is_active = true
+      and r.key = any(p_roles)
+  );
 $$;
 
-create or replace function public.ensure_user_organization()
-returns table (
-  organization_id uuid,
-  organization_slug text,
-  organization_name text,
-  role public.organization_role
-)
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid := auth.uid();
-  v_email text;
-  v_existing_org_id uuid;
-  v_existing_org_slug text;
-  v_existing_org_name text;
-  v_existing_role public.organization_role;
-  v_slug_base text;
-  v_slug text;
-begin
-  if v_user_id is null then
-    raise exception 'Authentication required.';
-  end if;
-
-  select o.id, o.slug, o.name, m.role
-  into v_existing_org_id, v_existing_org_slug, v_existing_org_name, v_existing_role
-  from public.organization_members m
-  join public.organizations o on o.id = m.organization_id
-  where m.user_id = v_user_id
-    and m.status = 'active'
-  order by m.created_at asc
-  limit 1;
-
-  if v_existing_org_id is not null then
-    return query
-    select v_existing_org_id, v_existing_org_slug, v_existing_org_name, v_existing_role;
-    return;
-  end if;
-
-  select coalesce(nullif(email, ''), concat('unknown+', v_user_id::text, '@local.invalid'))
-  into v_email
-  from auth.users
-  where id = v_user_id;
-
-  v_slug_base := regexp_replace(lower(split_part(v_email, '@', 1)), '[^a-z0-9]+', '-', 'g');
-  v_slug_base := trim(both '-' from v_slug_base);
-  if v_slug_base = '' then
-    v_slug_base := 'workspace';
-  end if;
-
-  v_slug := concat(v_slug_base, '-', substring(replace(v_user_id::text, '-', '') from 1 for 6));
-
-  insert into public.organizations (slug, name, created_by)
-  values (
-    v_slug,
-    concat(initcap(replace(v_slug_base, '-', ' ')), ' Workspace'),
-    v_user_id
-  )
-  on conflict (slug) do nothing;
-
-  insert into public.organization_members (organization_id, user_id, email, role, status)
-  select o.id, v_user_id, v_email, 'owner'::public.organization_role, 'active'
-  from public.organizations o
-  where o.slug = v_slug
-  on conflict (organization_id, user_id)
-  do update set
-    email = excluded.email,
-    role = 'owner'::public.organization_role,
-    status = 'active',
-    updated_at = now();
-
-  return query
-  select o.id, o.slug, o.name, 'owner'::public.organization_role
-  from public.organizations o
-  where o.slug = v_slug;
-end;
-$$;
-
-create or replace function public.bootstrap_admin_owner(
-  p_email text,
-  p_organization_name text,
-  p_organization_slug text
-)
+create or replace function public.ensure_app_user()
 returns uuid
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
+  v_auth_id uuid := auth.uid();
+  v_email text;
   v_user_id uuid;
-  v_org_id uuid;
 begin
-  select id into v_user_id
-  from auth.users
-  where lower(email) = lower(trim(p_email))
-  limit 1;
-
-  if v_user_id is null then
-    raise exception 'User % not found in auth.users', p_email;
+  if v_auth_id is null then
+    raise exception 'Authentication required';
   end if;
 
-  insert into public.organizations (slug, name, created_by)
-  values (lower(trim(p_organization_slug)), trim(p_organization_name), v_user_id)
-  on conflict (slug)
-  do update set
-    name = excluded.name,
-    updated_at = now()
-  returning id into v_org_id;
+  select coalesce(nullif(email, ''), concat('unknown+', v_auth_id::text, '@local.invalid'))
+  into v_email
+  from auth.users where id = v_auth_id;
 
-  if v_org_id is null then
-    select id into v_org_id
-    from public.organizations
-    where slug = lower(trim(p_organization_slug));
-  end if;
+  insert into public.users (auth_user_id, email)
+  values (v_auth_id, v_email)
+  on conflict (auth_user_id) do update set email = excluded.email, updated_at = now()
+  returning id into v_user_id;
 
-  update public.organization_members
-  set status = 'suspended', updated_at = now()
-  where user_id = v_user_id
-    and status = 'active'
-    and organization_id <> v_org_id;
-
-  update public.campaigns
-  set organization_id = v_org_id
-  where created_by = v_user_id
-    and organization_id <> v_org_id;
-
-  insert into public.organization_members (organization_id, user_id, email, role, status)
-  select
-    v_org_id,
-    v_user_id,
-    coalesce(nullif(u.email, ''), concat('unknown+', u.id::text, '@local.invalid')),
-    'owner'::public.organization_role,
-    'active'
-  from auth.users u
-  where u.id = v_user_id
-  on conflict (organization_id, user_id)
-  do update set
-    role = 'owner'::public.organization_role,
-    status = 'active',
-    email = excluded.email,
-    updated_at = now();
-
-  return v_org_id;
+  return v_user_id;
 end;
 $$;
 
-create or replace function public.create_organization_invite(
-  p_organization_id uuid,
-  p_email text,
-  p_role public.organization_role default 'member',
-  p_valid_hours int default 72
-)
-returns table (
-  invite_id uuid,
-  email text,
-  role public.organization_role,
-  token text,
-  expires_at timestamptz
-)
+create or replace function public.ensure_user_tenant(p_tenant_slug text default null)
+returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key public.app_role)
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_actor uuid := auth.uid();
-  v_actor_role public.organization_role;
-  v_email text := lower(trim(p_email));
+  v_app_user_id uuid;
+  v_email text;
+  v_slug_base text;
+  v_slug text;
+  v_tenant_id uuid;
+begin
+  v_app_user_id := public.ensure_app_user();
+
+  select u.email into v_email from public.users u where u.id = v_app_user_id;
+
+  if p_tenant_slug is not null then
+    return query
+    select t.id, t.slug, t.name, r.key
+    from public.user_tenant_roles utr
+    join public.tenants t on t.id = utr.tenant_id
+    join public.roles r on r.id = utr.role_id
+    where utr.user_id = v_app_user_id and utr.is_active = true and t.slug = p_tenant_slug
+    limit 1;
+    if found then
+      return;
+    end if;
+  end if;
+
+  return query
+  select t.id, t.slug, t.name, r.key
+  from public.user_tenant_roles utr
+  join public.tenants t on t.id = utr.tenant_id
+  join public.roles r on r.id = utr.role_id
+  where utr.user_id = v_app_user_id and utr.is_active = true
+  order by utr.created_at asc
+  limit 1;
+
+  if found then
+    return;
+  end if;
+
+  v_slug_base := regexp_replace(lower(split_part(v_email, '@', 1)), '[^a-z0-9]+', '-', 'g');
+  v_slug_base := trim(both '-' from v_slug_base);
+  if v_slug_base = '' then v_slug_base := 'workspace'; end if;
+  v_slug := concat(v_slug_base, '-', substring(replace(v_app_user_id::text, '-', '') from 1 for 6));
+
+  insert into public.tenants (slug, name, domain, contact_email, created_by)
+  values (v_slug, concat(initcap(replace(v_slug_base, '-', ' ')), ' Workspace'), split_part(v_email, '@', 2), v_email, auth.uid())
+  on conflict (slug) do nothing;
+
+  select id into v_tenant_id from public.tenants where slug = v_slug limit 1;
+
+  insert into public.user_tenant_roles (tenant_id, user_id, role_id)
+  select v_tenant_id, v_app_user_id, r.id
+  from public.roles r where r.key = 'owner'
+  on conflict on constraint user_tenant_roles_unique
+  do update set role_id = excluded.role_id, is_active = true, updated_at = now();
+
+  return query
+  select t.id, t.slug, t.name, 'owner'::public.app_role from public.tenants t where t.id = v_tenant_id;
+end;
+$$;
+
+create or replace function public.create_tenant_invite(
+  p_tenant_id uuid,
+  p_email text,
+  p_role_id uuid
+)
+returns table (invite_id uuid, email text, token text, expires_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := public.current_app_user_id();
   v_token text;
   v_token_hash text;
-  v_expires_at timestamptz := now() + make_interval(hours => greatest(1, p_valid_hours));
+  v_expires_at timestamptz := now() + interval '72 hours';
   v_invite_id uuid;
 begin
   if v_actor is null then
-    raise exception 'Authentication required.';
+    raise exception 'Authentication required';
   end if;
 
-  select m.role into v_actor_role
-  from public.organization_members m
-  where m.organization_id = p_organization_id
-    and m.user_id = v_actor
-    and m.status = 'active'
-  limit 1;
-
-  if v_actor_role is null or v_actor_role not in ('owner', 'admin') then
-    raise exception 'Only owner or admin can invite users.';
+  if not public.has_tenant_role(p_tenant_id, array['owner','admin']::public.app_role[]) then
+    raise exception 'Forbidden';
   end if;
 
-  if p_role not in ('admin', 'member') then
-    raise exception 'Invites can only assign admin or member role.';
-  end if;
-
-  if v_email = '' then
-    raise exception 'Invite email is required.';
-  end if;
-
-  update public.organization_invites
+  update public.tenant_invites
   set status = 'revoked', updated_at = now()
-  where organization_id = p_organization_id
-    and lower(email::text) = v_email
+  where tenant_id = p_tenant_id
+    and lower(email::text) = lower(trim(p_email))
     and status = 'pending';
 
   v_token := encode(gen_random_bytes(24), 'hex');
   v_token_hash := encode(digest(v_token, 'sha256'), 'hex');
 
-  insert into public.organization_invites (
-    organization_id,
-    email,
-    role,
-    token_hash,
-    invited_by,
-    status,
-    expires_at
-  ) values (
-    p_organization_id,
-    v_email,
-    p_role,
-    v_token_hash,
-    v_actor,
-    'pending',
-    v_expires_at
-  )
+  insert into public.tenant_invites (tenant_id, email, role_id, token_hash, invited_by, status, expires_at)
+  values (p_tenant_id, lower(trim(p_email)), p_role_id, v_token_hash, v_actor, 'pending', v_expires_at)
   returning id into v_invite_id;
 
-  return query
-  select v_invite_id, v_email, p_role, v_token, v_expires_at;
+  return query select v_invite_id, lower(trim(p_email)), v_token, v_expires_at;
 end;
 $$;
 
-create or replace function public.accept_organization_invite(p_token text)
-returns table (
-  organization_id uuid,
-  organization_slug text
-)
+create or replace function public.accept_tenant_invite(p_token text)
+returns table (tenant_id uuid, tenant_slug text)
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-  v_actor uuid := auth.uid();
-  v_actor_email text;
+  v_actor uuid := public.ensure_app_user();
   v_token_hash text;
-  v_invite public.organization_invites%rowtype;
+  v_invite public.tenant_invites%rowtype;
 begin
-  if v_actor is null then
-    raise exception 'Authentication required.';
-  end if;
-
   if coalesce(trim(p_token), '') = '' then
-    raise exception 'Invite token is required.';
+    raise exception 'Invite token is required';
   end if;
-
-  if exists (
-    select 1
-    from public.organization_members m
-    where m.user_id = v_actor
-      and m.status = 'active'
-  ) then
-    raise exception 'User already belongs to an organization.';
-  end if;
-
-  select coalesce(nullif(email, ''), concat('unknown+', id::text, '@local.invalid'))
-  into v_actor_email
-  from auth.users
-  where id = v_actor;
 
   v_token_hash := encode(digest(trim(p_token), 'sha256'), 'hex');
 
-  select *
-  into v_invite
-  from public.organization_invites i
+  select * into v_invite
+  from public.tenant_invites i
   where i.token_hash = v_token_hash
     and i.status = 'pending'
   limit 1;
 
   if v_invite.id is null then
-    raise exception 'Invite is invalid or already used.';
+    raise exception 'Invite is invalid or already used';
   end if;
 
   if v_invite.expires_at < now() then
-    update public.organization_invites
-    set status = 'expired', updated_at = now()
-    where id = v_invite.id;
-    raise exception 'Invite has expired.';
+    update public.tenant_invites set status = 'expired', updated_at = now() where id = v_invite.id;
+    raise exception 'Invite has expired';
   end if;
 
-  if lower(v_invite.email::text) <> lower(v_actor_email) then
-    raise exception 'Invite email does not match the current account.';
-  end if;
+  insert into public.user_tenant_roles (tenant_id, user_id, role_id, is_active)
+  values (v_invite.tenant_id, v_actor, v_invite.role_id, true)
+  on conflict on constraint user_tenant_roles_unique
+  do update set role_id = excluded.role_id, is_active = true, updated_at = now();
 
-  insert into public.organization_members (organization_id, user_id, email, role, status)
-  values (v_invite.organization_id, v_actor, v_actor_email, v_invite.role, 'active')
-  on conflict (organization_id, user_id)
-  do update set
-    role = excluded.role,
-    status = 'active',
-    email = excluded.email,
-    updated_at = now();
-
-  update public.organization_invites
-  set
-    status = 'accepted',
-    accepted_at = now(),
-    accepted_by = v_actor,
-    updated_at = now()
+  update public.tenant_invites
+  set status = 'accepted', accepted_at = now(), updated_at = now()
   where id = v_invite.id;
 
   return query
-  select o.id, o.slug
-  from public.organizations o
-  where o.id = v_invite.organization_id;
+  select t.id, t.slug from public.tenants t where t.id = v_invite.tenant_id;
 end;
 $$;
 
--- ----------
--- Grants for RPC (Supabase client)
--- ----------
-grant execute on function public.get_my_primary_org() to authenticated;
-grant execute on function public.ensure_user_organization() to authenticated;
-grant execute on function public.create_organization_invite(uuid, text, public.organization_role, int) to authenticated;
-grant execute on function public.accept_organization_invite(text) to authenticated;
+-- updated_at triggers
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites']
+  LOOP
+    EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
+    EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
+  END LOOP;
+END $$;
 
 -- ----------
--- RLS + Policies
+-- Indexes
 -- ----------
-alter table public.organizations enable row level security;
-alter table public.organization_members enable row level security;
-alter table public.organization_invites enable row level security;
-alter table public.campaigns enable row level security;
-alter table public.leads enable row level security;
+create index if not exists idx_user_tenant_roles_tenant on public.user_tenant_roles(tenant_id, is_active);
+create index if not exists idx_user_tenant_roles_user on public.user_tenant_roles(user_id, is_active);
+create index if not exists idx_tenant_invites_tenant_status on public.tenant_invites(tenant_id, status, created_at desc);
 
-drop policy if exists "organizations_select_member" on public.organizations;
-create policy "organizations_select_member"
-  on public.organizations
-  for select
-  using (public.is_org_member(id));
+-- ----------
+-- Seed roles
+-- ----------
+insert into public.roles (key, label)
+values
+  ('owner', 'Owner'),
+  ('admin', 'Admin'),
+  ('member', 'Member')
+on conflict (key) do nothing;
 
-drop policy if exists "organizations_update_admin" on public.organizations;
-create policy "organizations_update_admin"
-  on public.organizations
-  for update
-  using (public.is_org_member(id, array['owner', 'admin']::public.organization_role[]))
-  with check (public.is_org_member(id, array['owner', 'admin']::public.organization_role[]));
+-- ----------
+-- RLS
+-- ----------
+alter table public.tenants enable row level security;
+alter table public.users enable row level security;
+alter table public.roles enable row level security;
+alter table public.user_tenant_roles enable row level security;
+alter table public.tenant_invites enable row level security;
 
-drop policy if exists "organizations_insert_creator" on public.organizations;
-create policy "organizations_insert_creator"
-  on public.organizations
-  for insert
-  with check (auth.uid() = created_by);
+drop policy if exists roles_select_authenticated on public.roles;
+create policy roles_select_authenticated on public.roles
+for select to authenticated using (true);
 
-drop policy if exists "organization_members_select_org_member" on public.organization_members;
-create policy "organization_members_select_org_member"
-  on public.organization_members
-  for select
-  using (public.is_org_member(organization_id));
+drop policy if exists tenants_select_member on public.tenants;
+create policy tenants_select_member on public.tenants
+for select using (public.is_tenant_member(id));
 
-drop policy if exists "organization_members_update_admin" on public.organization_members;
-create policy "organization_members_update_admin"
-  on public.organization_members
-  for update
-  using (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]))
-  with check (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]));
+drop policy if exists tenants_update_admin on public.tenants;
+create policy tenants_update_admin on public.tenants
+for update
+using (public.has_tenant_role(id, array['owner','admin']::public.app_role[]))
+with check (public.has_tenant_role(id, array['owner','admin']::public.app_role[]));
 
-drop policy if exists "organization_members_delete_admin" on public.organization_members;
-create policy "organization_members_delete_admin"
-  on public.organization_members
-  for delete
-  using (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]));
-
-drop policy if exists "organization_invites_select_admin" on public.organization_invites;
-create policy "organization_invites_select_admin"
-  on public.organization_invites
-  for select
-  using (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]));
-
-drop policy if exists "organization_invites_insert_admin" on public.organization_invites;
-create policy "organization_invites_insert_admin"
-  on public.organization_invites
-  for insert
-  with check (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]));
-
-drop policy if exists "organization_invites_update_admin" on public.organization_invites;
-create policy "organization_invites_update_admin"
-  on public.organization_invites
-  for update
-  using (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]))
-  with check (public.is_org_member(organization_id, array['owner', 'admin']::public.organization_role[]));
-
-drop policy if exists "campaigns_select_org_member" on public.campaigns;
-create policy "campaigns_select_org_member"
-  on public.campaigns for select
-  using (public.is_org_member(organization_id));
-
-drop policy if exists "campaigns_insert_org_member" on public.campaigns;
-create policy "campaigns_insert_org_member"
-  on public.campaigns for insert
-  with check (public.is_org_member(organization_id));
-
-drop policy if exists "campaigns_update_org_member" on public.campaigns;
-create policy "campaigns_update_org_member"
-  on public.campaigns for update
-  using (public.is_org_member(organization_id))
-  with check (public.is_org_member(organization_id));
-
-drop policy if exists "campaigns_delete_org_member" on public.campaigns;
-create policy "campaigns_delete_org_member"
-  on public.campaigns for delete
-  using (public.is_org_member(organization_id));
-
-drop policy if exists "leads_select_org_member" on public.leads;
-create policy "leads_select_org_member"
-  on public.leads for select
-  using (
-    exists (
-      select 1
-      from public.campaigns c
-      where c.id = leads.campaign_id
-        and public.is_org_member(c.organization_id)
-    )
-  );
-
-drop policy if exists "leads_insert_org_member" on public.leads;
-create policy "leads_insert_org_member"
-  on public.leads for insert
-  with check (
-    exists (
-      select 1
-      from public.campaigns c
-      where c.id = leads.campaign_id
-        and public.is_org_member(c.organization_id)
-    )
-  );
-
-drop policy if exists "leads_update_org_member" on public.leads;
-create policy "leads_update_org_member"
-  on public.leads for update
-  using (
-    exists (
-      select 1
-      from public.campaigns c
-      where c.id = leads.campaign_id
-        and public.is_org_member(c.organization_id)
-    )
+drop policy if exists users_select_member on public.users;
+create policy users_select_member on public.users
+for select
+using (
+  exists (
+    select 1
+    from public.user_tenant_roles self_utr
+    join public.user_tenant_roles target_utr
+      on target_utr.tenant_id = self_utr.tenant_id
+      and target_utr.user_id = users.id
+    where self_utr.user_id = public.current_app_user_id()
+      and self_utr.is_active = true
+      and target_utr.is_active = true
   )
-  with check (
-    exists (
-      select 1
-      from public.campaigns c
-      where c.id = leads.campaign_id
-        and public.is_org_member(c.organization_id)
-    )
-  );
+  or users.id = public.current_app_user_id()
+);
 
-drop policy if exists "leads_delete_org_member" on public.leads;
-create policy "leads_delete_org_member"
-  on public.leads for delete
-  using (
-    exists (
-      select 1
-      from public.campaigns c
-      where c.id = leads.campaign_id
-        and public.is_org_member(c.organization_id)
-    )
-  );
+drop policy if exists users_update_self on public.users;
+create policy users_update_self on public.users
+for update using (users.id = public.current_app_user_id())
+with check (users.id = public.current_app_user_id());
+
+drop policy if exists user_tenant_roles_select_member on public.user_tenant_roles;
+create policy user_tenant_roles_select_member on public.user_tenant_roles
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists user_tenant_roles_insert_admin on public.user_tenant_roles;
+create policy user_tenant_roles_insert_admin on public.user_tenant_roles
+for insert
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists user_tenant_roles_update_admin on public.user_tenant_roles;
+create policy user_tenant_roles_update_admin on public.user_tenant_roles
+for update
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists user_tenant_roles_delete_admin on public.user_tenant_roles;
+create policy user_tenant_roles_delete_admin on public.user_tenant_roles
+for delete
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists tenant_invites_select_member on public.tenant_invites;
+create policy tenant_invites_select_member on public.tenant_invites
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists tenant_invites_insert_admin on public.tenant_invites;
+create policy tenant_invites_insert_admin on public.tenant_invites
+for insert
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists tenant_invites_update_admin on public.tenant_invites;
+create policy tenant_invites_update_admin on public.tenant_invites
+for update
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists tenant_invites_delete_admin on public.tenant_invites;
+create policy tenant_invites_delete_admin on public.tenant_invites
+for delete
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+-- ----------
+-- RPC grants
+-- ----------
+grant execute on function public.ensure_app_user() to authenticated;
+grant execute on function public.ensure_user_tenant(text) to authenticated;
+grant execute on function public.create_tenant_invite(uuid, text, uuid) to authenticated;
+grant execute on function public.accept_tenant_invite(text) to authenticated;
+
+-- Optional cleanup for old installs
+drop function if exists public.accept_organization_invite(text);
+drop function if exists public.create_organization_invite(uuid, text, public.organization_role, int);
+drop function if exists public.ensure_user_organization();
+drop function if exists public.get_my_primary_org();
+drop function if exists public.is_org_member(uuid, public.organization_role[]);
+drop type if exists public.organization_role;
+drop table if exists public.organization_invites cascade;
+drop table if exists public.organization_members cascade;
+drop table if exists public.organizations cascade;

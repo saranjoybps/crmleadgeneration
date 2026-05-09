@@ -1,13 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes.leads import router as leads_router
+from app.api.routes import api_router
 from app.core.config import get_settings
-
 
 settings = get_settings()
 
-app = FastAPI(title="Lead Generation CRM API", version="1.0.0")
+app = FastAPI(title="Joy CRM API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(leads_router)
+app.include_router(api_router)
 
 
 @app.get("/health")

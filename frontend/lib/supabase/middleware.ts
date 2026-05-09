@@ -7,6 +7,15 @@ type CookieToSet = {
   options?: any;
 };
 
+async function resolveTenantSlug(supabase: any) {
+  const { data, error } = await supabase.rpc("ensure_user_tenant", { p_tenant_slug: null });
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return null;
+  }
+
+  return String(data[0].tenant_slug ?? "").trim() || null;
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -22,18 +31,18 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-        }
-      }
+        },
+      },
     }
   );
 
   const {
-    data: { user }
+    data: { user },
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
   const requiresAuth = pathname.startsWith("/o/") || pathname === "/dashboard" || pathname.startsWith("/dashboard/");
-  const isAuthPath = ["/login", "/signup"].includes(request.nextUrl.pathname);
+  const isAuthPath = ["/login", "/signup", "/forgot-password", "/reset-password"].includes(pathname);
 
   if (requiresAuth && !user) {
     const redirectUrl = request.nextUrl.clone();
@@ -41,31 +50,16 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (isAuthPath && user) {
-    try {
-      const { data: primaryOrg } = await supabase.rpc("get_my_primary_org");
-      const org = Array.isArray(primaryOrg) ? primaryOrg[0] : null;
-      if (org?.organization_slug) {
-        const redirectUrl = request.nextUrl.clone();
-        redirectUrl.pathname = `/o/${org.organization_slug}/dashboard`;
-        return NextResponse.redirect(redirectUrl);
+  if (user && (isAuthPath || pathname === "/dashboard" || pathname.startsWith("/dashboard/"))) {
+    const slug = await resolveTenantSlug(supabase);
+    if (slug) {
+      const redirectUrl = request.nextUrl.clone();
+      if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+        redirectUrl.pathname = pathname.replace(/^\/dashboard/, `/o/${slug}/dashboard`);
+      } else {
+        redirectUrl.pathname = `/o/${slug}/dashboard`;
       }
-    } catch {
-      // no-op fallback below
-    }
-  }
-
-  if (user && (pathname === "/dashboard" || pathname.startsWith("/dashboard/"))) {
-    try {
-      const { data: primaryOrg } = await supabase.rpc("get_my_primary_org");
-      const org = Array.isArray(primaryOrg) ? primaryOrg[0] : null;
-      if (org?.organization_slug) {
-        const redirectUrl = request.nextUrl.clone();
-        redirectUrl.pathname = pathname.replace(/^\/dashboard/, `/o/${org.organization_slug}/dashboard`);
-        return NextResponse.redirect(redirectUrl);
-      }
-    } catch {
-      // keep response and let page-level redirect handle fallback.
+      return NextResponse.redirect(redirectUrl);
     }
   }
 

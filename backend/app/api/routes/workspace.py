@@ -1,0 +1,20 @@
+from fastapi import APIRouter, Depends
+
+from app.api.utils import response
+from app.core.deps import RequestContext, get_request_context, require_roles
+from app.core.supabase_client import get_supabase_client
+from app.schemas.common import WorkspaceUpdate
+
+router = APIRouter(prefix="/workspace", tags=["workspace"])
+
+
+@router.get("/me")
+def workspace_me(ctx: RequestContext = Depends(get_request_context)):
+    return response({"tenant_id": ctx.tenant_id, "slug": ctx.tenant_slug, "name": ctx.tenant_name, "role": ctx.role_key})
+
+
+@router.patch("")
+def update_workspace(payload: WorkspaceUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    updated = supabase.table("tenants").update(payload.model_dump(exclude_none=True)).eq("id", ctx.tenant_id).execute()
+    return response((updated.data or [None])[0])

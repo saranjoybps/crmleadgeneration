@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 class Settings:
     supabase_url: str
     supabase_service_key: str
-    apify_api_token: str
     allowed_origins: list[str]
 
 
@@ -21,6 +20,5 @@ def get_settings() -> Settings:
     return Settings(
         supabase_url=os.getenv("SUPABASE_URL", ""),
         supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", ""),
-        apify_api_token=os.getenv("APIFY_API_TOKEN", ""),
         allowed_origins=allowed_origins,
     )

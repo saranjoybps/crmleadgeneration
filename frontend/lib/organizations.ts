@@ -5,16 +5,16 @@ import type { OrganizationContext } from "@/lib/types";
 
 export async function getOrCreatePrimaryOrganization(): Promise<OrganizationContext> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("ensure_user_organization");
+  const { data, error } = await supabase.rpc("ensure_user_tenant", { p_tenant_slug: null });
   if (error || !data?.length) {
     throw new Error(error?.message ?? "Unable to resolve organization.");
   }
   const org = data[0];
   return {
-    organization_id: org.organization_id,
-    organization_slug: org.organization_slug,
-    organization_name: org.organization_name,
-    role: org.role,
+    organization_id: org.tenant_id,
+    organization_slug: org.tenant_slug,
+    organization_name: org.tenant_name,
+    role: org.role_key,
   };
 }
 
@@ -28,32 +28,18 @@ export async function getOrganizationContextOrRedirect(orgSlug: string): Promise
     redirect("/login");
   }
 
-  const { data, error } = await supabase
-    .from("organization_members")
-    .select("role, organizations!inner(id,slug,name)")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .eq("organizations.slug", orgSlug)
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data?.organizations) {
+  const { data, error } = await supabase.rpc("ensure_user_tenant", { p_tenant_slug: orgSlug });
+  if (error || !data?.length) {
     const fallback = await getOrCreatePrimaryOrganization();
     redirect(`/o/${fallback.organization_slug}/dashboard`);
   }
 
-  const org = Array.isArray(data.organizations) ? data.organizations[0] : data.organizations;
-
-  if (!org?.id || !org.slug || !org.name) {
-    const fallback = await getOrCreatePrimaryOrganization();
-    redirect(`/o/${fallback.organization_slug}/dashboard`);
-  }
-
+  const row = data[0];
   return {
-    organization_id: org.id,
-    organization_slug: org.slug,
-    organization_name: org.name,
-    role: data.role,
+    organization_id: row.tenant_id,
+    organization_slug: row.tenant_slug,
+    organization_name: row.tenant_name,
+    role: row.role_key,
   };
 }
 

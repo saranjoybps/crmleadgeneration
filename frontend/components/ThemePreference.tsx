@@ -14,13 +14,15 @@ function resolveTheme(theme: ThemeOption) {
 }
 
 export function ThemePreference() {
-  const [theme, setTheme] = useState<ThemeOption>(() => {
-    if (typeof window === "undefined") {
-      return "system";
-    }
+  const [theme, setTheme] = useState<ThemeOption>("system");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
     const stored = window.localStorage.getItem("joy-theme");
-    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
-  });
+    const nextTheme = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+    setTheme(nextTheme);
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -42,6 +44,10 @@ export function ThemePreference() {
     media.addEventListener("change", handleSystemChange);
     return () => media.removeEventListener("change", handleSystemChange);
   }, [theme]);
+
+  if (!mounted) {
+    return <div className="h-10" aria-hidden="true" />;
+  }
 
   return (
     <div className="flex flex-wrap gap-2">
