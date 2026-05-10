@@ -321,10 +321,12 @@ begin
   from public.tasks
   where ticket_id = p_ticket_id;
 
-  if v_total > 0 and v_total = v_closed then
+  if v_total = 0 then
+    update public.tickets set status = 'open', updated_at = now() where id = p_ticket_id and status <> 'open';
+  elsif v_total = v_closed then
     update public.tickets set status = 'closed', updated_at = now() where id = p_ticket_id and status <> 'closed';
-  elsif v_total > 0 then
-    update public.tickets set status = 'in_progress', updated_at = now() where id = p_ticket_id and status = 'closed';
+  else
+    update public.tickets set status = 'in_progress', updated_at = now() where id = p_ticket_id and status <> 'in_progress';
   end if;
 end;
 $$;

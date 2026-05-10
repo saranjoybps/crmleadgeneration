@@ -8,6 +8,21 @@ from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+def _accessible_project_ids(ctx: RequestContext) -> set[str] | None:
+    if ctx.role_key in {"owner", "admin"}:
+        return None
+    supabase = get_supabase_client()
+    rows = (
+        supabase.table("project_members")
+        .select("project_id")
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("user_id", ctx.app_user_id)
+        .eq("is_active", True)
+        .execute()
+    )
+    return {x["project_id"] for x in (rows.data or [])}
+
+
 @router.get("")
 def list_tasks(
     project_id: str | None = Query(default=None),
@@ -31,6 +46,9 @@ def list_tasks(
         query = query.eq("status", status)
 
     rows = (query.execute().data or [])
+    allowed_project_ids = _accessible_project_ids(ctx)
+    if allowed_project_ids is not None:
+        rows = [row for row in rows if row["project_id"] in allowed_project_ids]
     if assigned_to_me:
         task_ids = [row["id"] for row in rows]
         if not task_ids:
@@ -46,6 +64,25 @@ def list_tasks(
         assigned_ids = {x["task_id"] for x in (assignments.data or [])}
         rows = [row for row in rows if row["id"] in assigned_ids]
     return response(rows)
+
+
+@router.get("/{task_id}")
+def get_task(task_id: str, ctx: RequestContext = Depends(require_roles("owner", "admin", "member", "client"))):
+    supabase = get_supabase_client()
+    data = (
+        supabase.table("tasks")
+        .select("id,tenant_id,project_id,ticket_id,title,description,status,created_by,created_at,updated_at")
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("id", task_id)
+        .maybe_single()
+        .execute()
+    )
+    if not data.data:
+        raise HTTPException(status_code=404, detail="Task not found")
+    allowed_project_ids = _accessible_project_ids(ctx)
+    if allowed_project_ids is not None and data.data["project_id"] not in allowed_project_ids:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return response(data.data)
 
 
 @router.post("/ticket/{ticket_id}")
@@ -96,6 +133,18 @@ def create_task(ticket_id: str, payload: TaskCreate, ctx: RequestContext = Depen
 @router.patch("/{task_id}")
 def update_task(task_id: str, payload: TaskUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin", "member"))):
     supabase = get_supabase_client()
+    if ctx.role_key == "member":
+        assigned = (
+            supabase.table("task_assignees")
+            .select("id")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("task_id", task_id)
+            .eq("user_id", ctx.app_user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not assigned.data:
+            raise HTTPException(status_code=403, detail="Forbidden")
     updated = (
         supabase.table("tasks")
         .update(payload.model_dump(exclude_none=True))
@@ -129,3 +178,19 @@ def update_task_assignees(task_id: str, payload: TaskAssigneesUpdate, ctx: Reque
         .execute()
     )
     return response(assignees.data or [])
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: str, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    deleted = (
+        supabase.table("tasks")
+        .delete()
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("id", task_id)
+        .execute()
+    )
+    row = (deleted.data or [None])[0]
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return response(row)
