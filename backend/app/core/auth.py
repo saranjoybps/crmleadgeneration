@@ -13,6 +13,10 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return token.strip()
 
 
+def get_authenticated_access_token(authorization: str | None = Header(default=None)) -> str:
+    return _extract_bearer_token(authorization)
+
+
 def get_authenticated_user_id(authorization: str | None = Header(default=None)) -> str:
     token = _extract_bearer_token(authorization)
     settings = get_settings()

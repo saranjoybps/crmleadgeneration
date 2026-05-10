@@ -1,4 +1,4 @@
-export type AppRole = "owner" | "admin" | "member";
+export type AppRole = "owner" | "admin" | "member" | "client";
 export type OrganizationRole = AppRole;
 
 export type OrganizationContext = {

@@ -17,6 +17,11 @@ async function resolveTenantSlug(supabase: any) {
 }
 
 export async function updateSession(request: NextRequest) {
+  const isServerAction = request.method === "POST" && request.headers.get("next-action") !== null;
+  if (isServerAction) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

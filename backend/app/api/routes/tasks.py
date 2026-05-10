@@ -1,0 +1,131 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.api.utils import response
+from app.core.deps import RequestContext, require_roles
+from app.core.supabase_client import get_supabase_client
+from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate
+
+router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+@router.get("")
+def list_tasks(
+    project_id: str | None = Query(default=None),
+    ticket_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    assigned_to_me: bool = Query(default=False),
+    ctx: RequestContext = Depends(require_roles("owner", "admin", "member", "client")),
+):
+    supabase = get_supabase_client()
+    query = (
+        supabase.table("tasks")
+        .select("id,tenant_id,project_id,ticket_id,title,description,status,created_by,created_at,updated_at")
+        .eq("tenant_id", ctx.tenant_id)
+        .order("created_at", desc=True)
+    )
+    if project_id:
+        query = query.eq("project_id", project_id)
+    if ticket_id:
+        query = query.eq("ticket_id", ticket_id)
+    if status:
+        query = query.eq("status", status)
+
+    rows = (query.execute().data or [])
+    if assigned_to_me:
+        task_ids = [row["id"] for row in rows]
+        if not task_ids:
+            return response([])
+        assignments = (
+            supabase.table("task_assignees")
+            .select("task_id")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("user_id", ctx.app_user_id)
+            .in_("task_id", task_ids)
+            .execute()
+        )
+        assigned_ids = {x["task_id"] for x in (assignments.data or [])}
+        rows = [row for row in rows if row["id"] in assigned_ids]
+    return response(rows)
+
+
+@router.post("/ticket/{ticket_id}")
+def create_task(ticket_id: str, payload: TaskCreate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    ticket = (
+        supabase.table("tickets")
+        .select("id,project_id")
+        .eq("id", ticket_id)
+        .eq("tenant_id", ctx.tenant_id)
+        .maybe_single()
+        .execute()
+    )
+    if not ticket.data:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    created = (
+        supabase.table("tasks")
+        .insert(
+            {
+                "tenant_id": ctx.tenant_id,
+                "project_id": ticket.data["project_id"],
+                "ticket_id": ticket_id,
+                "title": payload.title,
+                "description": payload.description,
+                "status": payload.status or "open",
+                "created_by": ctx.app_user_id,
+            }
+        )
+        .execute()
+    )
+    row = (created.data or [None])[0]
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to create task")
+
+    for user_id in set(payload.assignee_user_ids or []):
+        supabase.table("task_assignees").upsert(
+            {
+                "tenant_id": ctx.tenant_id,
+                "task_id": row["id"],
+                "user_id": user_id,
+            },
+            on_conflict="task_id,user_id",
+        ).execute()
+    return response(row)
+
+
+@router.patch("/{task_id}")
+def update_task(task_id: str, payload: TaskUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin", "member"))):
+    supabase = get_supabase_client()
+    updated = (
+        supabase.table("tasks")
+        .update(payload.model_dump(exclude_none=True))
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("id", task_id)
+        .execute()
+    )
+    row = (updated.data or [None])[0]
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return response(row)
+
+
+@router.post("/{task_id}/assignees")
+def update_task_assignees(task_id: str, payload: TaskAssigneesUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    for user_id in set(payload.add_user_ids or []):
+        supabase.table("task_assignees").upsert(
+            {"tenant_id": ctx.tenant_id, "task_id": task_id, "user_id": user_id},
+            on_conflict="task_id,user_id",
+        ).execute()
+    remove_ids = list(set(payload.remove_user_ids or []))
+    if remove_ids:
+        supabase.table("task_assignees").delete().eq("tenant_id", ctx.tenant_id).eq("task_id", task_id).in_("user_id", remove_ids).execute()
+
+    assignees = (
+        supabase.table("task_assignees")
+        .select("id,task_id,user_id,assigned_at")
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("task_id", task_id)
+        .execute()
+    )
+    return response(assignees.data or [])

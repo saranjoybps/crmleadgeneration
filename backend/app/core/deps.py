@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
+import logging
 
 from fastapi import Depends, Header, HTTPException
 from supabase import Client
 
-from app.core.auth import get_authenticated_user_id
+from app.core.auth import get_authenticated_access_token, get_authenticated_user_id
 from app.core.supabase_client import get_supabase_client
+
+logger = logging.getLogger("joycrm.auth_flow")
 
 
 @dataclass
@@ -24,15 +27,22 @@ def _extract_org_slug(x_org_slug: str | None = Header(default=None, alias="X-Org
 
 def get_request_context(
     auth_user_id: str = Depends(get_authenticated_user_id),
+    access_token: str = Depends(get_authenticated_access_token),
     org_slug: str | None = Depends(_extract_org_slug),
-    supabase: Client = Depends(get_supabase_client),
+    debug_id: str | None = Header(default=None, alias="X-Debug-Id"),
 ) -> RequestContext:
+    dbg = debug_id or "no-debug-id"
+    logger.info("[USER_CREATE][BE][%s][1] get_request_context start org_slug=%s auth_user_id=%s token_len=%s", dbg, org_slug, auth_user_id, len(access_token))
+    supabase: Client = get_supabase_client(access_token=access_token)
+    logger.info("[USER_CREATE][BE][%s][2] supabase client created with user token context", dbg)
     app_user_resp = supabase.rpc("ensure_app_user").execute()
+    logger.info("[USER_CREATE][BE][%s][3] ensure_app_user executed data_present=%s", dbg, app_user_resp.data is not None)
     if app_user_resp.data is None:
         raise HTTPException(status_code=500, detail="Failed to initialize app user")
 
     tenant_resp = supabase.rpc("ensure_user_tenant", {"p_tenant_slug": org_slug}).execute()
     rows: list[dict[str, Any]] = tenant_resp.data or []
+    logger.info("[USER_CREATE][BE][%s][4] ensure_user_tenant rows=%s", dbg, len(rows))
     if not rows:
         raise HTTPException(status_code=403, detail="No tenant membership found")
 

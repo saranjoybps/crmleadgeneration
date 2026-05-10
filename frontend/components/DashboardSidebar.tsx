@@ -14,9 +14,12 @@ type DashboardSidebarProps = {
 };
 
 const MAIN_LINKS = [
-  { href: "/dashboard", label: "Dashboard", roles: ["owner", "admin", "member"] },
+  { href: "/dashboard", label: "Dashboard", roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/projects", label: "Projects", roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tickets", label: "Tickets", roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tasks", label: "Tasks", roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/users", label: "Users", roles: ["owner", "admin"] },
-  { href: "/dashboard/settings", label: "Settings", roles: ["owner", "admin", "member"] },
+  { href: "/dashboard/settings", label: "Settings", roles: ["owner", "admin", "member", "client"] },
 ] as const;
 
 function isLinkActive(pathname: string, href: string) {

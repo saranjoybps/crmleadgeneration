@@ -14,9 +14,9 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgS
       <article className="surface-card rounded-2xl border p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-main">Getting Started</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted">
-          <li>Invite users from the Users page.</li>
-          <li>Update workspace details in Settings.</li>
-          <li>Each user signs in with their own account and password.</li>
+          <li>Create projects and map users/clients from Projects.</li>
+          <li>Clients can raise project tickets from Tickets.</li>
+          <li>Track linked task execution in the Tasks Kanban board.</li>
         </ul>
       </article>
     </section>
