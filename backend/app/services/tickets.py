@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from supabase import Client
+from postgrest.exceptions import APIError
 
 from app.core.deps import RequestContext
 from app.schemas.common import TicketCreate, TicketUpdate
@@ -24,7 +25,7 @@ class TicketService:
     def list_tickets(cls, supabase: Client, ctx: RequestContext, project_id: str | None = None, status: str | None = None):
         query = (
             supabase.table("tickets")
-            .select("id,tenant_id,project_id,title,description,type,status,created_by,created_at,updated_at")
+            .select("id,tenant_id,project_id,title,description,type,status,priority,due_date,created_by,created_at,updated_at")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
@@ -43,7 +44,7 @@ class TicketService:
     def get_ticket(cls, supabase: Client, ticket_id: str, ctx: RequestContext):
         data = (
             supabase.table("tickets")
-            .select("id,tenant_id,project_id,title,description,type,status,created_by,created_at,updated_at")
+            .select("*, tasks(*, task_assignees(user_id, users(full_name)))")
             .eq("tenant_id", ctx.tenant_id)
             .eq("id", ticket_id)
             .maybe_single()
@@ -64,21 +65,27 @@ class TicketService:
         if allowed_project_ids is not None and payload.project_id not in allowed_project_ids:
             raise HTTPException(status_code=403, detail="Forbidden for this project")
         
-        created = (
-            supabase.table("tickets")
-            .insert(
-                {
-                    "tenant_id": ctx.tenant_id,
-                    "project_id": payload.project_id,
-                    "title": payload.title,
-                    "description": payload.description,
-                    "type": payload.type,
-                    "status": payload.status or "open",
-                    "created_by": ctx.app_user_id,
-                }
+        try:
+            created = (
+                supabase.table("tickets")
+                .insert(
+                    {
+                        "tenant_id": ctx.tenant_id,
+                        "project_id": payload.project_id,
+                        "title": payload.title,
+                        "description": payload.description,
+                        "type": payload.type,
+                        "priority": getattr(payload, "priority", "medium"),
+                        "due_date": getattr(payload, "due_date", None),
+                        "status": payload.status or "open",
+                        "created_by": ctx.app_user_id,
+                    }
+                )
+                .execute()
             )
-            .execute()
-        )
+        except APIError as exc:
+            raise HTTPException(status_code=400, detail=f"Database error: {exc.message}")
+
         row = (created.data or [None])[0]
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create ticket")
@@ -101,13 +108,24 @@ class TicketService:
             if ticket.data["project_id"] not in allowed_project_ids:
                 raise HTTPException(status_code=404, detail="Ticket not found")
         
-        updated = (
-            supabase.table("tickets")
-            .update(payload.model_dump(exclude_none=True))
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("id", ticket_id)
-            .execute()
-        )
+        try:
+            update_data = payload.model_dump(exclude_none=True)
+            
+            if hasattr(payload, "priority") and payload.priority:
+                update_data["priority"] = payload.priority
+            if hasattr(payload, "due_date"):
+                update_data["due_date"] = payload.due_date
+
+            updated = (
+                supabase.table("tickets")
+                .update(update_data)
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("id", ticket_id)
+                .execute()
+            )
+        except APIError as exc:
+            raise HTTPException(status_code=400, detail=f"Database error: {exc.message}")
+
         row = (updated.data or [None])[0]
         if not row:
             raise HTTPException(status_code=404, detail="Ticket not found")

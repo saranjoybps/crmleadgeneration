@@ -79,6 +79,21 @@ exception
   when duplicate_object then null;
 end $$;
 
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'priority_level') then
+    create type public.priority_level as enum ('low', 'medium', 'high', 'urgent');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.priority_level add value if not exists 'low';
+  alter type public.priority_level add value if not exists 'medium';
+  alter type public.priority_level add value if not exists 'high';
+  alter type public.priority_level add value if not exists 'urgent';
+exception
+  when duplicate_object then null;
+end $$;
+
 -- ----------
 -- Core tenant and access tables
 -- ----------
@@ -170,6 +185,8 @@ create table if not exists public.tickets (
   description text null,
   type public.ticket_type not null default 'other',
   status public.ticket_status not null default 'open',
+  priority public.priority_level not null default 'medium',
+  due_date timestamptz null,
   created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -191,7 +208,10 @@ create table if not exists public.tasks (
   ticket_id uuid not null references public.tickets(id) on delete cascade,
   title text not null,
   description text null,
+  priority public.priority_level not null default 'medium',
   status public.task_status not null default 'open',
+  due_date timestamptz null,
+  parent_task_id uuid null constraint tasks_parent_task_id_fkey references public.tasks(id) on delete cascade,
   created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -204,6 +224,18 @@ create table if not exists public.task_assignees (
   user_id uuid not null references public.users(id) on delete cascade,
   assigned_at timestamptz not null default now(),
   constraint task_assignees_unique unique (task_id, user_id)
+);
+
+create table if not exists public.time_entries (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  task_id uuid not null references public.tasks(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  duration_minutes int not null check (duration_minutes > 0),
+  note text null,
+  started_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.ticket_comments (
@@ -583,7 +615,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -640,6 +672,7 @@ create index if not exists idx_project_members_project_user on public.project_me
 create index if not exists idx_tickets_tenant_project_status on public.tickets(tenant_id, project_id, status, created_at desc);
 create index if not exists idx_tasks_tenant_project_status on public.tasks(tenant_id, project_id, status, created_at desc);
 create index if not exists idx_tasks_ticket_status on public.tasks(ticket_id, status);
+create index if not exists idx_tasks_parent on public.tasks(parent_task_id);
 create index if not exists idx_task_assignees_task_user on public.task_assignees(task_id, user_id);
 create index if not exists idx_todos_tenant_user_status on public.todos(tenant_id, user_id, is_completed, created_at desc);
 
@@ -669,6 +702,7 @@ alter table public.ticket_watchers enable row level security;
 alter table public.tasks enable row level security;
 alter table public.task_assignees enable row level security;
 alter table public.ticket_comments enable row level security;
+alter table public.time_entries enable row level security;
 
 drop policy if exists roles_select_authenticated on public.roles;
 create policy roles_select_authenticated on public.roles
@@ -862,6 +896,14 @@ for delete using (
   user_id = public.current_app_user_id()
   or public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
 );
+
+drop policy if exists time_entries_select_scoped on public.time_entries;
+create policy time_entries_select_scoped on public.time_entries
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists time_entries_insert_member on public.time_entries;
+create policy time_entries_insert_member on public.time_entries
+for insert with check (public.is_tenant_member(tenant_id));
 
 -- ----------
 -- Todos RLS

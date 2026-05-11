@@ -31,12 +31,16 @@ type TaskRow = {
   title: string; 
   description?: string; 
   status: string; 
+  priority: "low" | "medium" | "high" | "urgent";
+  due_date?: string;
   ticket_id: string; 
   project_id: string;
+  parent_task_id?: string;
+  subtasks?: Array<{ id: string; title: string; status: string }>;
   created_at: string;
   task_assignees?: Array<{
     user_id: string;
-    users?: { email: string; full_name?: string }
+    users?: { email: string; full_name?: string; avatar_url?: string }
   }>
 };
 type TicketRow = { id: string; title: string };
@@ -62,13 +66,16 @@ async function createTask(formData: FormData) {
   const ticketId = String(formData.get("ticket_id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const priority = String(formData.get("priority") ?? "medium");
+  const dueDate = String(formData.get("due_date") ?? "").trim();
+  const parentTaskId = String(formData.get("parent_task_id") ?? "").trim();
   const assigneeIds = formData.getAll("assignee_user_ids").map((x) => String(x).trim()).filter(Boolean);
   const path = `/o/${orgSlug}/dashboard/tasks`;
 
   const { error } = await apiRequest("/api/v1/tasks/ticket/" + encodeURIComponent(ticketId), {
     method: "POST",
     orgSlug,
-    body: { title, description: description || null, status: "open", assignee_user_ids: assigneeIds },
+    body: { title, description: description || null, status: "open", priority, due_date: dueDate || null, parent_task_id: parentTaskId || null, assignee_user_ids: assigneeIds },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -83,12 +90,14 @@ async function updateTask(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
+  const priority = String(formData.get("priority") ?? "medium");
+  const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tasks`;
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
     orgSlug,
-    body: { title: title || undefined, description: description || null, status },
+    body: { title: title || undefined, description: description || null, status, priority, due_date: dueDate.trim() ? dueDate.trim() : null },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -164,6 +173,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   const ticketTitleById = new Map(tickets.map((t) => [t.id, t.title]));
   const selectedTask = tasks.find((t) => t.id === query.task_id);
   const selectedTicketId = query.ticket_id ?? selectedTask?.ticket_id ?? "";
+  const selectedParentId = query.modal === "create" ? (query.task_id ?? "") : "";
 
   const onStatusChange = async (taskId: string, newStatus: string) => {
     "use server";
@@ -266,6 +276,24 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
       >
         <form action={createTask} className="space-y-6">
           <input type="hidden" name="organization_slug" value={orgSlug} />
+          <input type="hidden" name="parent_task_id" value={selectedParentId} />
+          
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted">Priority</label>
+              <select name="priority" defaultValue="medium" className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted">Due Date</label>
+              <input type="date" name="due_date" className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-sm font-bold uppercase tracking-wider text-muted">Link to Ticket</label>
             <select name="ticket_id" required defaultValue={selectedTicketId} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
@@ -323,15 +351,30 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 
                 <Input label="Title" name="title" defaultValue={selectedTask.title} required />
                 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-bold uppercase tracking-wider text-muted">Status</label>
-                  <select 
-                    name="status" 
-                    defaultValue={selectedTask.status}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500"
-                  >
-                    {KANBAN_STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ").toUpperCase()}</option>)}
-                  </select>
+                <div className="grid gap-6 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold uppercase tracking-wider text-muted">Status</label>
+                    <select 
+                      name="status" 
+                      defaultValue={selectedTask.status}
+                      className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500"
+                    >
+                      {KANBAN_STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ").toUpperCase()}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold uppercase tracking-wider text-muted">Priority</label>
+                    <select name="priority" defaultValue={selectedTask.priority} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold uppercase tracking-wider text-muted">Due Date</label>
+                    <input type="date" name="due_date" defaultValue={selectedTask.due_date ? selectedTask.due_date.split('T')[0] : ""} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -348,6 +391,28 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                   <Button type="submit">Save Changes</Button>
                 </div>
               </form>
+
+              <div className="space-y-4 pt-6 border-t border-soft">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-main">Sub-tasks</h4>
+                  <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create&task_id=${selectedTask.id}&ticket_id=${selectedTask.ticket_id}`}>
+                    <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600">
+                      <Plus className="h-3 w-3" /> Add Sub-task
+                    </Button>
+                  </Link>
+                </div>
+                <div className="space-y-2">
+                  {(selectedTask.subtasks || []).map(sub => (
+                    <div key={sub.id} className="flex items-center justify-between rounded-xl border border-soft p-3 bg-slate-50/50">
+                      <span className="text-sm font-medium">{sub.title}</span>
+                      <Badge variant="outline" className="text-[10px]">{sub.status}</Badge>
+                    </div>
+                  ))}
+                  {(selectedTask.subtasks || []).length === 0 && (
+                    <p className="text-xs text-muted italic">No sub-tasks yet.</p>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="lg:col-span-1 space-y-6">

@@ -24,7 +24,7 @@ import {
   useSortable
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Trash2, Ticket, Plus, User } from "lucide-react";
+import { Trash2, Ticket, Plus, User, Calendar, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +34,8 @@ interface Task {
   title: string;
   description?: string;
   status: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  due_date?: string;
   ticket_id: string;
   project_id: string;
   task_assignees?: Array<{
@@ -315,6 +317,25 @@ function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: {
         isOverlay && "shadow-xl border-violet-300 rotate-2 scale-105"
       )}
     >
+      <div className="mb-2 flex items-center justify-between">
+         <div className={cn("flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", 
+           task.priority === 'urgent' ? "bg-red-100 text-red-700" :
+           task.priority === 'high' ? "bg-amber-100 text-amber-700" :
+           task.priority === 'medium' ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+         )}>
+           <AlertCircle className="h-2.5 w-2.5" />
+           {task.priority}
+         </div>
+         {task.due_date && (
+           <div className={cn("flex items-center gap-1 text-[10px] font-medium", 
+             new Date(task.due_date) < new Date() && task.status !== 'closed' ? "text-red-500" : "text-muted"
+           )}>
+             <Calendar className="h-3 w-3" />
+             {new Date(task.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+           </div>
+         )}
+      </div>
+
       <div className="flex items-start justify-between gap-2">
         <Link 
           href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`} 

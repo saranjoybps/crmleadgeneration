@@ -1,4 +1,6 @@
 from supabase import Client
+from postgrest.exceptions import APIError
+from fastapi import HTTPException
 from app.core.deps import RequestContext
 
 class DashboardService:
@@ -51,6 +53,17 @@ class DashboardService:
             .execute()
             .count
         )
+
+        try:
+            total_minutes = (
+                supabase.table("time_entries")
+                .select("duration_minutes")
+                .eq("tenant_id", ctx.tenant_id)
+                .execute()
+            )
+            logged_hours = sum(r["duration_minutes"] for r in (total_minutes.data or [])) / 60
+        except APIError:
+            logged_hours = 0
         
         return {
             "active_projects": projects_count or 0,
@@ -58,4 +71,7 @@ class DashboardService:
             "pending_tasks": tasks_count or 0,
             "team_members": users_count or 0,
             "pending_todos": todos_count or 0,
+            "analytics": {
+                "total_logged_hours": round(logged_hours, 1),
+            }
         }

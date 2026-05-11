@@ -66,6 +66,8 @@ class TicketCreate(BaseModel):
     title: str
     description: str | None = None
     type: str = "other"
+    priority: str | None = "medium"
+    due_date: str | None = None
     status: str | None = None
 
 
@@ -73,6 +75,8 @@ class TicketUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     type: str | None = None
+    priority: str | None = None
+    due_date: str | None = None
     status: str | None = None
 
 
@@ -80,6 +84,9 @@ class TaskCreate(BaseModel):
     title: str
     description: str | None = None
     status: str | None = None
+    priority: str | None = "medium"
+    due_date: str | None = None
+    parent_task_id: str | None = None
     assignee_user_ids: list[str] | None = None
 
 
@@ -87,6 +94,8 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     status: str | None = None
+    priority: str | None = None
+    due_date: str | None = None
 
 
 class TaskAssigneesUpdate(BaseModel):

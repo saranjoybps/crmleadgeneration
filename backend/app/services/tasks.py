@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from supabase import Client
+from postgrest.exceptions import APIError
 
 from app.core.deps import RequestContext
 from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate
@@ -35,7 +36,7 @@ class TaskService:
         # Since a task can have multiple assignees, we'll get a list of objects.
         query = (
             supabase.table("tasks")
-            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name))")
+            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name, avatar_url)), subtasks:tasks!parent_task_id(id, title, status)")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
@@ -46,7 +47,11 @@ class TaskService:
         if status:
             query = query.eq("status", status)
 
-        res = query.execute()
+        try:
+            res = query.execute()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to fetch tasks: {str(e)}")
+            
         rows = res.data or []
         
         allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
@@ -72,7 +77,7 @@ class TaskService:
     def get_task(cls, supabase: Client, task_id: str, ctx: RequestContext):
         data = (
             supabase.table("tasks")
-            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name))")
+            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name, avatar_url)), time_entries(*), subtasks:tasks!parent_task_id(*)")
             .eq("tenant_id", ctx.tenant_id)
             .eq("id", task_id)
             .maybe_single()
@@ -100,21 +105,28 @@ class TaskService:
         if not ticket.data:
             raise HTTPException(status_code=404, detail="Ticket not found")
 
-        created = (
-            supabase.table("tasks")
-            .insert(
-                {
-                    "tenant_id": ctx.tenant_id,
-                    "project_id": ticket.data["project_id"],
-                    "ticket_id": ticket_id,
-                    "title": payload.title,
-                    "description": payload.description,
-                    "status": payload.status or "open",
-                    "created_by": ctx.app_user_id,
-                }
+        try:
+            insert_data = {
+                "tenant_id": ctx.tenant_id,
+                "project_id": ticket.data["project_id"],
+                "ticket_id": ticket_id,
+                "title": payload.title,
+                "description": payload.description,
+                "due_date": getattr(payload, "due_date", None),
+                "priority": getattr(payload, "priority", "medium"),
+                "parent_task_id": getattr(payload, "parent_task_id", None),
+                "status": payload.status or "open",
+                "created_by": ctx.app_user_id,
+            }
+            
+            created = (
+                supabase.table("tasks")
+                .insert(insert_data)
+                .execute()
             )
-            .execute()
-        )
+        except APIError as exc:
+            raise HTTPException(status_code=400, detail=f"Database error: {exc.message}")
+
         row = (created.data or [None])[0]
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create task")
@@ -151,13 +163,30 @@ class TaskService:
             if not assigned.data:
                 raise HTTPException(status_code=403, detail="Forbidden")
         
-        updated = (
-            supabase.table("tasks")
-            .update(payload.model_dump(exclude_none=True))
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("id", task_id)
-            .execute()
-        )
+        try:
+            # Explicitly extract fields to ensure they are updated even if 
+            # they aren't fully mapped in the Pydantic TaskUpdate schema.
+            update_data = payload.model_dump(exclude_none=True)
+            
+            # Force priority and due_date if they exist in the payload
+            priority_val = getattr(payload, "priority", None)
+            if priority_val:
+                update_data["priority"] = priority_val
+            
+            due_date_val = getattr(payload, "due_date", "missing_attr")
+            if due_date_val != "missing_attr":
+                update_data["due_date"] = due_date_val
+
+            updated = (
+                supabase.table("tasks")
+                .update(update_data)
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("id", task_id)
+                .execute()
+            )
+        except APIError as exc:
+            raise HTTPException(status_code=400, detail=f"Database error: {exc.message}")
+
         row = (updated.data or [None])[0]
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
