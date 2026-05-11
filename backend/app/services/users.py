@@ -47,7 +47,7 @@ class UserService:
     def list_users(supabase: Client, ctx: RequestContext, limit: int = 20, offset: int = 0):
         data = (
             supabase.table("user_tenant_roles")
-            .select("id,user_id,is_active,roles(key,label),users(id,email,full_name)")
+            .select("id,user_id,is_active,roles(key,label),users!user_tenant_roles_user_id_fkey(id,email,full_name,avatar_url)")
             .eq("tenant_id", ctx.tenant_id)
             .range(offset, offset + limit - 1)
             .execute()
@@ -81,12 +81,16 @@ class UserService:
 
         try:
             logger.info("[USER_CREATE][SERVICE][%s] creating auth user via admin API", dbg)
+            user_metadata = {"full_name": payload.full_name} if payload.full_name else {}
+            if payload.avatar_url:
+                user_metadata["avatar_url"] = payload.avatar_url
+                
             created_auth = supabase.auth.admin.create_user(
                 {
                     "email": email,
                     "password": payload.password,
                     "email_confirm": True,
-                    "user_metadata": {"full_name": payload.full_name} if payload.full_name else {},
+                    "user_metadata": user_metadata,
                 }
             )
         except Exception as exc:
@@ -99,7 +103,7 @@ class UserService:
 
         try:
             user = supabase.table("users").insert(
-                {"auth_user_id": auth_user_id, "email": email, "full_name": payload.full_name}
+                {"auth_user_id": auth_user_id, "email": email, "full_name": payload.full_name, "avatar_url": payload.avatar_url}
             ).execute()
         except APIError as exc:
             logger.exception("[USER_CREATE][SERVICE][%s] users insert failed", dbg)
@@ -129,16 +133,27 @@ class UserService:
     @classmethod
     def update_user(cls, supabase: Client, user_id: str, payload: UserUpdate, ctx: RequestContext):
         # 1. Verify user exists and belongs to the same tenant (RLS should handle this, but we'll do an extra check)
-        check = supabase.table("user_tenant_roles").select("id, user_id, users(auth_user_id)").eq("user_id", user_id).eq("tenant_id", ctx.tenant_id).maybe_single().execute()
+        check = supabase.table("user_tenant_roles").select("id, user_id, users!user_tenant_roles_user_id_fkey(auth_user_id)").eq("user_id", user_id).eq("tenant_id", ctx.tenant_id).maybe_single().execute()
+        
         if not check or not check.data:
              raise HTTPException(status_code=404, detail="User not found in this organization")
 
-        auth_user_id = check.data["users"]["auth_user_id"]
+        # Handle potential array return for joined users
+        user_data = check.data.get("users")
+        if isinstance(user_data, list) and len(user_data) > 0:
+            user_data = user_data[0]
+        
+        if not user_data or not user_data.get("auth_user_id"):
+             raise HTTPException(status_code=500, detail="Unable to resolve authentication ID for this user")
+
+        auth_user_id = user_data["auth_user_id"]
         
         # 2. Update users table
         update_data = {}
         if payload.full_name is not None:
             update_data["full_name"] = payload.full_name
+        if payload.avatar_url is not None:
+            update_data["avatar_url"] = payload.avatar_url
 
         if not update_data:
             return {"id": user_id}
@@ -149,11 +164,17 @@ class UserService:
             raise HTTPException(status_code=500, detail=f"Failed to update user: {exc.message}") from exc
 
         # 3. Update auth metadata via admin API
+        meta_update = {}
         if payload.full_name is not None:
+            meta_update["full_name"] = payload.full_name
+        if payload.avatar_url is not None:
+            meta_update["avatar_url"] = payload.avatar_url
+
+        if meta_update:
             try:
                 supabase.auth.admin.update_user_by_id(
                     auth_user_id,
-                    {"user_metadata": {"full_name": payload.full_name}}
+                    {"user_metadata": meta_update}
                 )
             except Exception as exc:
                 logger.warning("Auth metadata update failed for %s: %s", auth_user_id, exc)

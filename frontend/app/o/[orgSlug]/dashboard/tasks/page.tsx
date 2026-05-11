@@ -1,30 +1,58 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Plus, Edit, Trash2, Users, Calendar, ArrowRight, Info, CheckSquare, Ticket } from "lucide-react";
+import { Plus, Edit, Trash2, Users, Calendar, ArrowRight, Info, CheckSquare, Ticket, Filter, X } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Drawer } from "@/components/ui/Drawer";
+import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
+import { KanbanBoard } from "@/components/KanbanBoard";
 import { AutoSubmitSelect } from "@/components/AutoSubmitSelect";
 
 type TasksPageProps = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ error?: string; success?: string; drawer?: "create" | "edit" | "assignees" | "delete"; task_id?: string; ticket_id?: string }>;
+  searchParams: Promise<{ 
+    error?: string; 
+    success?: string; 
+    modal?: "create" | "edit" | "delete"; 
+    task_id?: string; 
+    ticket_id?: string;
+    project_id?: string;
+    user_id?: string;
+  }>;
 };
 
-type TaskRow = { id: string; title: string; description?: string; status: string; ticket_id: string; created_at: string };
+type TaskRow = { 
+  id: string; 
+  title: string; 
+  description?: string; 
+  status: string; 
+  ticket_id: string; 
+  project_id: string;
+  created_at: string;
+  task_assignees?: Array<{
+    user_id: string;
+    users?: { email: string; full_name?: string }
+  }>
+};
 type TicketRow = { id: string; title: string };
+type ProjectRow = { id: string; name: string };
 
 const KANBAN_STATUSES = ["open", "in_progress", "review", "hold", "closed"] as const;
 
 function resolveJoinedUserEmail(value: unknown): string {
   if (Array.isArray(value)) return String(value[0]?.email ?? "unknown");
   if (value && typeof value === "object" && "email" in value) return String((value as { email?: string }).email ?? "unknown");
+  return "unknown";
+}
+
+function resolveJoinedUserName(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0]?.full_name || value[0]?.email || "unknown");
+  if (value && typeof value === "object" && "full_name" in value) return String((value as { full_name?: string }).full_name || (value as { email?: string }).email || "unknown");
   return "unknown";
 }
 
@@ -48,24 +76,6 @@ async function createTask(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Task created.")}`);
 }
 
-async function updateTaskStatus(formData: FormData) {
-  "use server";
-  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
-  const taskId = String(formData.get("task_id") ?? "").trim();
-  const status = String(formData.get("status") ?? "").trim();
-  const path = `/o/${orgSlug}/dashboard/tasks`;
-
-  const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
-    method: "PATCH",
-    orgSlug,
-    body: { status },
-  });
-
-  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
-  revalidatePath(path);
-  redirect(`${path}?success=${encodeURIComponent("Status updated.")}`);
-}
-
 async function updateTask(formData: FormData) {
   "use server";
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
@@ -84,6 +94,32 @@ async function updateTask(formData: FormData) {
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Task updated.")}`);
+}
+
+async function updateTaskAssignees(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const currentAssigneeIds = String(formData.get("current_assignee_ids") ?? "").split(",").filter(Boolean);
+  const newAssigneeIds = formData.getAll("assignee_user_ids").map((x) => String(x).trim()).filter(Boolean);
+  const path = `/o/${orgSlug}/dashboard/tasks`;
+
+  const toAdd = newAssigneeIds.filter(id => !currentAssigneeIds.includes(id));
+  const toRemove = currentAssigneeIds.filter(id => !newAssigneeIds.includes(id));
+
+  if (toAdd.length === 0 && toRemove.length === 0) {
+     redirect(`${path}?success=${encodeURIComponent("No changes made.")}`);
+  }
+  
+  const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/assignees`, {
+    method: "POST",
+    orgSlug,
+    body: { add_user_ids: toAdd, remove_user_ids: toRemove },
+  });
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("Assignees updated.")}`);
 }
 
 async function deleteTask(formData: FormData) {
@@ -106,50 +142,97 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   const { orgSlug } = await params;
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
+  const canManage = org.role === "owner" || org.role === "admin";
 
-  const [ticketsRes, tasksRes, usersRes] = await Promise.all([
+  const taskQueryParams = new URLSearchParams();
+  if (query.project_id) taskQueryParams.append("project_id", query.project_id);
+  if (query.user_id) taskQueryParams.append("user_id", query.user_id);
+
+  const [ticketsRes, projectsRes, tasksRes, usersRes] = await Promise.all([
     apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
-    apiRequest<TaskRow[]>("/api/v1/tasks", { orgSlug }),
-    (org.role === "owner" || org.role === "admin")
-      ? apiRequest<Array<{ user_id: string; users?: unknown }>>("/api/v1/users?limit=200&offset=0", { orgSlug })
-      : Promise.resolve({ data: [] as any[], error: null }),
+    apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
+    apiRequest<TaskRow[]>(`/api/v1/tasks?${taskQueryParams.toString()}`, { orgSlug }),
+    apiRequest<Array<{ user_id: string; users?: any }>>("/api/v1/users?limit=200&offset=0", { orgSlug }),
   ]);
 
   if (tasksRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{tasksRes.error}</div>;
 
   const tickets = ticketsRes.data ?? [];
+  const projects = projectsRes.data ?? [];
   const tasks = tasksRes.data ?? [];
   const users = usersRes.data ?? [];
   const ticketTitleById = new Map(tickets.map((t) => [t.id, t.title]));
   const selectedTask = tasks.find((t) => t.id === query.task_id);
   const selectedTicketId = query.ticket_id ?? selectedTask?.ticket_id ?? "";
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "open": return "bg-slate-100 text-slate-700 border-slate-200";
-      case "in_progress": return "bg-violet-100 text-violet-700 border-violet-200";
-      case "review": return "bg-amber-100 text-amber-700 border-amber-200";
-      case "hold": return "bg-red-100 text-red-700 border-red-200";
-      case "closed": return "bg-emerald-100 text-emerald-700 border-emerald-200";
-      default: return "bg-slate-100 text-slate-700 border-slate-200";
-    }
+  const onStatusChange = async (taskId: string, newStatus: string) => {
+    "use server";
+    const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      orgSlug,
+      body: { status: newStatus },
+    });
+    if (!error) revalidatePath(`/o/${orgSlug}/dashboard/tasks`);
   };
 
   return (
     <div className="h-full flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-main">Task Board</h1>
           <p className="text-muted">Track progress and collaborate on active tasks.</p>
         </div>
-        {(org.role === "owner" || org.role === "admin") && (
-          <Link href={`/o/${orgSlug}/dashboard/tasks?drawer=create`}>
-            <Button size="lg" className="gap-2">
-              <Plus className="h-5 w-5" />
-              New Task
-            </Button>
-          </Link>
-        )}
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filter Bar */}
+          <div className="flex items-center gap-2 rounded-2xl border border-soft bg-white p-1.5 shadow-sm">
+            <form method="GET" className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 text-xs font-bold text-main border-r border-soft">
+                <Filter className="h-3.5 w-3.5 text-violet-500" />
+                <span>Filters</span>
+              </div>
+              
+              <AutoSubmitSelect 
+                name="project_id"
+                defaultValue={query.project_id || ""}
+                options={[
+                  { value: "", label: "All Projects" },
+                  ...projects.map(p => ({ value: p.id, label: p.name }))
+                ]}
+                className="h-9 rounded-xl border-none bg-transparent px-3 text-xs font-bold text-main focus:ring-0 cursor-pointer"
+              />
+
+              <AutoSubmitSelect 
+                name="user_id"
+                defaultValue={query.user_id || ""}
+                options={[
+                  { value: "", label: "All Users" },
+                  ...users.map(u => ({ value: u.user_id, label: resolveJoinedUserName(u.users) }))
+                ]}
+                className="h-9 rounded-xl border-none bg-transparent px-3 text-xs font-bold text-main focus:ring-0 cursor-pointer"
+              />
+
+              {(query.project_id || query.user_id) && (
+                <Link 
+                  href={`/o/${orgSlug}/dashboard/tasks`}
+                  className="flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold text-muted hover:text-red-500 transition-colors border-l border-soft"
+                  title="Clear filters"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Link>
+              )}
+            </form>
+          </div>
+
+          {canManage && (
+            <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create`}>
+              <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
+                <Plus className="h-5 w-5" />
+                New Task
+              </Button>
+            </Link>
+          )}
+        </div>
       </header>
 
       {query.error && (
@@ -166,82 +249,22 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
         </div>
       )}
 
-      <div className="flex-1 overflow-x-auto pb-6">
-        <div className="flex gap-6 h-full min-w-[1200px]">
-          {KANBAN_STATUSES.map((status) => (
-            <div key={status} className="flex w-80 flex-col rounded-3xl bg-slate-50/50 p-4 border border-soft/50">
-              <div className="mb-4 flex items-center justify-between px-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className={cn("border-none px-0 font-bold", status === "in_progress" ? "text-violet-600" : "text-muted")}>
-                    {status.replace("_", " ")}
-                  </Badge>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                    {tasks.filter(t => t.status === status).length}
-                  </span>
-                </div>
-                {(org.role === "owner" || org.role === "admin") && (
-                  <Link href={`/o/${orgSlug}/dashboard/tasks?drawer=create`}>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Plus className="h-4 w-4" /></Button>
-                  </Link>
-                )}
-              </div>
+      <KanbanBoard 
+        initialTasks={tasks} 
+        orgSlug={orgSlug} 
+        canManage={canManage || org.role === "member"} 
+        ticketTitleById={ticketTitleById}
+        onStatusChange={onStatusChange}
+      />
 
-              <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1">
-                {tasks.filter((task) => task.status === status).map((task) => (
-                  <div key={task.id} className="group relative rounded-2xl border border-soft bg-white p-4 shadow-sm transition-all hover:border-violet-200 hover:shadow-md">
-                    <div className="flex items-start justify-between gap-2">
-                      <Link href={`/o/${orgSlug}/dashboard/tasks?drawer=edit&task_id=${task.id}`} className="text-sm font-bold text-main hover:text-violet-600 leading-tight">
-                        {task.title}
-                      </Link>
-                      <Link href={`/o/${orgSlug}/dashboard/tasks?drawer=delete&task_id=${task.id}`} className="opacity-0 transition-opacity group-hover:opacity-100">
-                        <Trash2 className="h-3.5 w-3.5 text-muted hover:text-red-500" />
-                      </Link>
-                    </div>
-                    
-                    <p className="mt-2 line-clamp-2 text-xs text-muted leading-relaxed">
-                      {task.description || "No description provided."}
-                    </p>
-
-                    <div className="mt-4 flex items-center justify-between border-t border-soft/50 pt-3">
-                      <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-[10px] font-medium text-muted">
-                        <Ticket className="h-3 w-3" />
-                        <span className="truncate max-w-[100px]">{ticketTitleById.get(task.ticket_id) || "General"}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {(org.role === "owner" || org.role === "admin" || org.role === "member") && (
-                          <form action={updateTaskStatus} className="flex">
-                            <input type="hidden" name="organization_slug" value={orgSlug} />
-                            <input type="hidden" name="task_id" value={task.id} />
-                            <AutoSubmitSelect 
-                              name="status" 
-                              defaultValue={task.status} 
-                              options={KANBAN_STATUSES.map(s => ({ value: s, label: s[0].toUpperCase() }))}
-                              className="w-8 h-8 rounded-full border border-soft bg-white text-[10px] appearance-none text-center cursor-pointer hover:bg-slate-50"
-                            />
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {tasks.filter((task) => task.status === status).length === 0 && (
-                  <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-[11px] font-medium text-slate-400">
-                    No tasks here
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* CREATE DRAWER */}
-      <Drawer
-        isOpen={query.drawer === "create"}
+      {/* CREATE MODAL */}
+      <Modal
+        isOpen={query.modal === "create"}
         closeHref={`/o/${orgSlug}/dashboard/tasks`}
         title="Create New Task"
+        size="lg"
       >
-        <form action={createTask} className="space-y-8">
+        <form action={createTask} className="space-y-6">
           <input type="hidden" name="organization_slug" value={orgSlug} />
           <div className="space-y-1.5">
             <label className="text-sm font-bold uppercase tracking-wider text-muted">Link to Ticket</label>
@@ -257,7 +280,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
             <label className="text-sm font-bold uppercase tracking-wider text-muted">Description</label>
             <textarea 
               name="description" 
-              rows={6} 
+              rows={4} 
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-violet-500" 
               placeholder="Provide more details about this task..."
             />
@@ -265,11 +288,11 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
 
           <div className="space-y-3">
             <label className="text-sm font-bold uppercase tracking-wider text-muted">Assign Team Members</label>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2 max-h-[200px] overflow-y-auto p-1">
               {users.map((row) => (
-                <label key={row.user_id} className="flex items-center gap-3 rounded-2xl border border-soft p-3 cursor-pointer transition-colors hover:bg-slate-50 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50">
+                <label key={row.user_id} className="flex items-center gap-3 rounded-xl border border-soft p-3 cursor-pointer transition-colors hover:bg-slate-50 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50">
                   <input type="checkbox" name="assignee_user_ids" value={row.user_id} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
-                  <span className="text-sm font-medium">{resolveJoinedUserEmail(row.users)}</span>
+                  <span className="text-xs font-medium">{resolveJoinedUserEmail(row.users)}</span>
                 </label>
               ))}
             </div>
@@ -282,106 +305,138 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
             </Link>
           </div>
         </form>
-      </Drawer>
+      </Modal>
 
-      {/* EDIT DRAWER */}
+      {/* EDIT MODAL */}
       {selectedTask && (
-        <Drawer
-          isOpen={query.drawer === "edit"}
+        <Modal
+          isOpen={query.modal === "edit"}
           closeHref={`/o/${orgSlug}/dashboard/tasks`}
           title="Edit Task"
+          size="lg"
         >
-          <div className="space-y-10">
-            <form action={updateTask} className="space-y-6">
-              <input type="hidden" name="organization_slug" value={orgSlug} />
-              <input type="hidden" name="task_id" value={selectedTask.id} />
-              
-              <Input label="Title" name="title" defaultValue={selectedTask.title} required />
-              
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold uppercase tracking-wider text-muted">Status</label>
-                <select 
-                  name="status" 
-                  defaultValue={selectedTask.status}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500"
-                >
-                  {KANBAN_STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ").toUpperCase()}</option>)}
-                </select>
-              </div>
+          <div className="grid gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-6">
+              <form action={updateTask} className="space-y-6">
+                <input type="hidden" name="organization_slug" value={orgSlug} />
+                <input type="hidden" name="task_id" value={selectedTask.id} />
+                
+                <Input label="Title" name="title" defaultValue={selectedTask.title} required />
+                
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold uppercase tracking-wider text-muted">Status</label>
+                  <select 
+                    name="status" 
+                    defaultValue={selectedTask.status}
+                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500"
+                  >
+                    {KANBAN_STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ").toUpperCase()}</option>)}
+                  </select>
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="text-sm font-bold uppercase tracking-wider text-muted">Description</label>
-                <textarea 
-                  name="description" 
-                  defaultValue={selectedTask.description ?? ""}
-                  rows={6} 
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-violet-500"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold uppercase tracking-wider text-muted">Description</label>
+                  <textarea 
+                    name="description" 
+                    defaultValue={selectedTask.description ?? ""}
+                    rows={6} 
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
 
-              <div className="flex justify-end pt-4 border-t border-soft">
-                <Button type="submit" size="lg">Save Changes</Button>
-              </div>
-            </form>
+                <div className="flex justify-end pt-4 border-t border-soft">
+                  <Button type="submit">Save Changes</Button>
+                </div>
+              </form>
+            </div>
 
-            <div className="rounded-3xl border border-soft bg-slate-50 p-6">
-              <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-4">Task Info</h4>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-white p-2 border border-soft shadow-sm"><Ticket className="h-4 w-4 text-violet-500" /></div>
-                  <div>
-                    <p className="text-[10px] font-bold text-muted uppercase">Linked Ticket</p>
-                    <p className="text-sm font-bold text-main">{ticketTitleById.get(selectedTask.ticket_id) || "N/A"}</p>
+            <div className="lg:col-span-1 space-y-6">
+              <div className="rounded-2xl border border-soft bg-slate-50 p-5 space-y-6">
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-muted mb-3">Assignees</h4>
+                  <form action={updateTaskAssignees} className="space-y-3">
+                    <input type="hidden" name="organization_slug" value={orgSlug} />
+                    <input type="hidden" name="task_id" value={selectedTask.id} />
+                    <input type="hidden" name="current_assignee_ids" value={(selectedTask.task_assignees || []).map(a => a.user_id).join(",")} />
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1">
+                      {users.map((row) => {
+                        const isAssigned = (selectedTask.task_assignees || []).some(a => a.user_id === row.user_id);
+                        return (
+                          <label key={row.user_id} className="flex items-center gap-2 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              name="assignee_user_ids" 
+                              value={row.user_id} 
+                              defaultChecked={isAssigned}
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" 
+                            />
+                            <span className="text-[11px] font-medium text-main group-hover:text-violet-600">{resolveJoinedUserName(row.users)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {canManage && <Button type="submit" variant="ghost" size="sm" className="w-full h-8 text-[10px] uppercase font-bold tracking-widest bg-white border border-soft">Update Assignees</Button>}
+                  </form>
+                </div>
+
+                <div className="pt-4 border-t border-soft/50">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-muted mb-3">Info</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Ticket className="h-3.5 w-3.5 text-violet-400" />
+                      <p className="text-[11px] font-medium text-main truncate">{ticketTitleById.get(selectedTask.ticket_id) || "N/A"}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-3.5 w-3.5 text-violet-400" />
+                      <p className="text-[11px] font-medium text-main">Created May 11, 2026</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-white p-2 border border-soft shadow-sm"><Calendar className="h-4 w-4 text-violet-500" /></div>
-                  <div>
-                    <p className="text-[10px] font-bold text-muted uppercase">Created On</p>
-                    <p className="text-sm font-bold text-main">May 11, 2026</p>
+
+                {canManage && (
+                  <div className="pt-4 border-t border-soft/50">
+                    <Link href={`/o/${orgSlug}/dashboard/tasks?modal=delete&task_id=${selectedTask.id}`}>
+                      <Button variant="danger" className="w-full gap-2 py-2.5 text-[11px] font-bold bg-white hover:bg-red-50 border-red-100 text-red-600 shadow-none">
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete Task
+                      </Button>
+                    </Link>
                   </div>
-                </div>
-              </div>
-              <div className="mt-8">
-                <Link href={`/o/${orgSlug}/dashboard/tasks?drawer=delete&task_id=${selectedTask.id}`}>
-                  <Button variant="danger" className="w-full gap-2 py-3 bg-white hover:bg-red-50 border-red-100 text-red-600 shadow-none">
-                    <Trash2 className="h-4 w-4" />
-                    Delete Task
-                  </Button>
-                </Link>
+                )}
               </div>
             </div>
           </div>
-        </Drawer>
+        </Modal>
       )}
 
-      {/* DELETE MODAL (using Drawer for simplicity as in original code, but could be Modal) */}
-      {selectedTask && query.drawer === "delete" && (
-        <Drawer
+      {/* DELETE MODAL */}
+      {selectedTask && query.modal === "delete" && (
+        <Modal
           isOpen={true}
           closeHref={`/o/${orgSlug}/dashboard/tasks`}
           title="Delete Task"
+          size="sm"
         >
-          <div className="space-y-8 text-center py-10">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100 shadow-inner">
-              <Trash2 className="h-10 w-10" />
+          <div className="space-y-6 text-center py-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600 border border-red-100 shadow-inner">
+              <Trash2 className="h-8 w-8" />
             </div>
             <div>
-              <h4 className="text-2xl font-bold text-main tracking-tight">Are you sure?</h4>
-              <p className="mt-3 text-muted leading-relaxed px-6">
-                You are about to delete <span className="font-bold text-main underline underline-offset-4 decoration-red-200">{selectedTask.title}</span>. This action is permanent.
+              <h4 className="text-xl font-bold text-main tracking-tight">Are you sure?</h4>
+              <p className="mt-2 text-xs text-muted leading-relaxed px-4">
+                You are about to delete <span className="font-bold text-main">{selectedTask.title}</span>. This action is permanent.
               </p>
             </div>
-            <form action={deleteTask} className="flex flex-col gap-3 pt-6 px-4">
+            <form action={deleteTask} className="flex flex-col gap-2 pt-4 px-2">
               <input type="hidden" name="organization_slug" value={orgSlug} />
               <input type="hidden" name="task_id" value={selectedTask.id} />
-              <Button variant="danger" type="submit" className="py-4 bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200">Delete Permanently</Button>
+              <Button variant="danger" type="submit" className="py-3 bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-100">Delete Permanently</Button>
               <Link href={`/o/${orgSlug}/dashboard/tasks`}>
-                <Button variant="outline" className="w-full py-4 border-none text-muted hover:bg-slate-100">Keep this task</Button>
+                <Button variant="outline" className="w-full py-3 border-none text-muted hover:bg-slate-100">Keep this task</Button>
               </Link>
             </form>
           </div>
-        </Drawer>
+        </Modal>
       )}
     </div>
   );

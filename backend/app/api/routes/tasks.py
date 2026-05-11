@@ -15,6 +15,7 @@ def list_tasks(
     ticket_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     assigned_to_me: bool = Query(default=False),
+    user_id: str | None = Query(default=None),
     ctx: RequestContext = Depends(require_roles("owner", "admin", "member", "client")),
 ):
     supabase = get_supabase_client()
@@ -25,6 +26,7 @@ def list_tasks(
         ticket_id=ticket_id,
         status=status,
         assigned_to_me=assigned_to_me,
+        user_id=user_id,
     )
     return response(tasks)
 

@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
-import { Users, UserPlus, Shield, Mail, Trash2, Save, Info } from "lucide-react";
+import { Users, UserPlus, Shield, Mail, Trash2, Save, Info, Edit2, X } from "lucide-react";
 
 import { canManageOrganizationUsers, getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/api-server";
 
 type UsersPageProps = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ error?: string; success?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; edit_user_id?: string }>;
 };
 
 const MANAGEABLE_ROLES = ["admin", "member", "client"] as const;
@@ -62,6 +62,24 @@ async function updateMemberRole(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Role updated.")}`);
 }
 
+async function updateUserDetails(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/users`;
+
+  const { error } = await apiRequest(`/api/v1/users/${userId}`, {
+    method: "PATCH",
+    orgSlug,
+    body: { full_name: fullName || null },
+  });
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("User updated.")}`);
+}
+
 async function removeMember(formData: FormData) {
   "use server";
   const tenantId = String(formData.get("organization_id") ?? "").trim();
@@ -90,7 +108,16 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
   const [{ data: members, error: membersError }, { data: roleRows }] = await Promise.all([
     supabase
       .from("user_tenant_roles")
-      .select("id,tenant_id,user_id,role_id,is_active,created_at,roles!user_tenant_roles_role_id_fkey(key,label),users!user_tenant_roles_user_id_fkey(email,full_name)")
+      .select(`
+        id,
+        tenant_id,
+        user_id,
+        role_id,
+        is_active,
+        created_at,
+        roles(key, label),
+        users!user_tenant_roles_user_id_fkey(email, full_name, avatar_url)
+      `)
       .eq("tenant_id", org.organization_id)
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
@@ -166,16 +193,50 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
                     const u = resolveUser(member.users);
                     const r = resolveRole(member.roles);
                     const isSelf = member.user_id === currentAppUserId;
+                    const isEditing = query.edit_user_id === member.user_id;
                     
                     return (
                       <tr key={member.id} className="group hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-2xl bg-violet-100 flex items-center justify-center text-sm font-bold text-violet-700">
-                              {u.email?.[0].toUpperCase()}
+                            <div className="h-10 w-10 rounded-2xl bg-violet-100 flex items-center justify-center text-sm font-bold text-violet-700 overflow-hidden">
+                              {u.avatar_url ? (
+                                <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                u.email?.[0].toUpperCase()
+                              )}
                             </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-main truncate">{u.full_name || "New User"}</p>
+                            <div className="min-w-0 flex-1">
+                              {isEditing ? (
+                                <form action={updateUserDetails} className="flex items-center gap-2">
+                                  <input type="hidden" name="organization_slug" value={orgSlug} />
+                                  <input type="hidden" name="user_id" value={member.user_id} />
+                                  <input
+                                    name="full_name"
+                                    defaultValue={u.full_name || ""}
+                                    autoFocus
+                                    className="h-8 w-full rounded-lg border border-slate-300 px-2 text-sm focus:ring-1 focus:ring-violet-500 outline-none"
+                                  />
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" type="submit">
+                                    <Save className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <a href={`/o/${orgSlug}/dashboard/users`} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400">
+                                    <X className="h-3.5 w-3.5" />
+                                  </a>
+                                </form>
+                              ) : (
+                                <div className="flex items-center gap-2 group/name">
+                                  <p className="font-bold text-main truncate">{u.full_name || "New User"}</p>
+                                  {canManage && !isSelf && (
+                                    <a
+                                      href={`/o/${orgSlug}/dashboard/users?edit_user_id=${member.user_id}`}
+                                      className="opacity-0 group-hover/name:opacity-100 p-1 rounded hover:bg-slate-100 text-slate-400 transition-opacity"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                               <p className="text-xs text-muted truncate">{u.email}</p>
                             </div>
                           </div>

@@ -29,10 +29,13 @@ class TaskService:
         ticket_id: str | None = None,
         status: str | None = None,
         assigned_to_me: bool = False,
+        user_id: str | None = None,
     ):
+        # We fetch tasks with their assignees. 
+        # Since a task can have multiple assignees, we'll get a list of objects.
         query = (
             supabase.table("tasks")
-            .select("id,tenant_id,project_id,ticket_id,title,description,status,created_by,created_at,updated_at")
+            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name))")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
@@ -43,25 +46,25 @@ class TaskService:
         if status:
             query = query.eq("status", status)
 
-        rows = query.execute().data or []
+        res = query.execute()
+        rows = res.data or []
+        
         allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
         if allowed_project_ids is not None:
             rows = [row for row in rows if row["project_id"] in allowed_project_ids]
         
+        # Filter by user_id if provided (tasks where this user is assigned)
+        if user_id:
+            rows = [
+                row for row in rows 
+                if any(a["user_id"] == user_id for a in (row.get("task_assignees") or []))
+            ]
+
         if assigned_to_me:
-            task_ids = [row["id"] for row in rows]
-            if not task_ids:
-                return []
-            assignments = (
-                supabase.table("task_assignees")
-                .select("task_id")
-                .eq("tenant_id", ctx.tenant_id)
-                .eq("user_id", ctx.app_user_id)
-                .in_("task_id", task_ids)
-                .execute()
-            )
-            assigned_ids = {x["task_id"] for x in (assignments.data or [])}
-            rows = [row for row in rows if row["id"] in assigned_ids]
+            rows = [
+                row for row in rows 
+                if any(a["user_id"] == ctx.app_user_id for a in (row.get("task_assignees") or []))
+            ]
         
         return rows
 
@@ -69,7 +72,7 @@ class TaskService:
     def get_task(cls, supabase: Client, task_id: str, ctx: RequestContext):
         data = (
             supabase.table("tasks")
-            .select("id,tenant_id,project_id,ticket_id,title,description,status,created_by,created_at,updated_at")
+            .select("*, task_assignees(user_id, users!task_assignees_user_id_fkey(email, full_name))")
             .eq("tenant_id", ctx.tenant_id)
             .eq("id", task_id)
             .maybe_single()

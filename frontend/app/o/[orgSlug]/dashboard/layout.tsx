@@ -24,6 +24,15 @@ export default async function DashboardLayout({ children, params }: DashboardLay
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const profileInitial = (user.email?.trim().charAt(0) || "U").toUpperCase();
 
+  // Fetch avatar from users table as requested
+  const { data: dbUser } = await supabase
+    .from("users")
+    .select("avatar_url")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  const avatarUrl = dbUser?.avatar_url;
+
   return (
     <main className="h-screen overflow-hidden">
       <div className="flex h-full flex-col overflow-hidden surface-panel md:flex-row">
@@ -32,6 +41,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
           basePath={`/o/${org.organization_slug}`}
           organizationName={org.organization_name}
           role={org.role}
+          avatarUrl={avatarUrl}
         />
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--dashboard-bg)]">
           <header className="surface-panel border-b border-soft px-5 py-4 md:px-7">
@@ -60,6 +70,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                   email={user.email ?? "unknown@joycrm.app"}
                   role={org.role}
                   initial={profileInitial}
+                  avatarUrl={avatarUrl}
                 />
               </div>
             </div>

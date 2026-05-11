@@ -8,9 +8,10 @@ type ProfileMenuProps = {
   email: string;
   role: string;
   initial: string;
+  avatarUrl?: string;
 };
 
-export function ProfileMenu({ email, role, initial }: ProfileMenuProps) {
+export function ProfileMenu({ email, role, initial, avatarUrl }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -31,11 +32,15 @@ export function ProfileMenu({ email, role, initial }: ProfileMenuProps) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-10 min-w-10 items-center justify-center rounded-full bg-violet-600 px-3 text-sm font-semibold text-white transition hover:bg-violet-700"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-violet-600 text-sm font-semibold text-white transition hover:bg-violet-700 overflow-hidden"
         aria-label="Profile"
         aria-expanded={open}
       >
-        {initial}
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          initial
+        )}
       </button>
 
       {open ? (

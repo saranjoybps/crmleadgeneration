@@ -22,6 +22,19 @@ function cleanOptional(value: FormDataEntryValue | null): string | null {
   return trimmed.length ? trimmed : null;
 }
 
+const AVATARS = [
+  { name: "Aria", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Aria" },
+  { name: "Alex", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Alex" },
+  { name: "James", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=James" },
+  { name: "Ethan", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Ethan" },
+  { name: "Sofia", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Sofia" },
+  { name: "Lily", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Lily" },
+  { name: "Nora", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Nora" },
+  { name: "Luna", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Luna" },
+  { name: "Nova", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Nova" },
+  { name: "Felix", url: "https://api.dicebear.com/7.x/lorelei/svg?seed=Felix" },
+];
+
 async function updateProfileDetails(formData: FormData) {
   "use server";
   const organizationSlug = String(formData.get("organization_slug") ?? "").trim();
@@ -30,14 +43,33 @@ async function updateProfileDetails(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { error } = await supabase.auth.updateUser({
+  const fullName = cleanOptional(formData.get("full_name"));
+  const avatarUrl = cleanOptional(formData.get("avatar_url"));
+
+  // 1. Update auth metadata
+  const { error: authError } = await supabase.auth.updateUser({
     data: {
-      full_name: cleanOptional(formData.get("full_name")),
+      full_name: fullName,
       job_title: cleanOptional(formData.get("job_title")),
+      avatar_url: avatarUrl,
     },
   });
 
-  if (error) redirect(`${path}?error=${encodeURIComponent(error.message)}`);
+  if (authError) redirect(`${path}?error=${encodeURIComponent(authError.message)}`);
+
+  // 2. Sync to public.users table
+  const { error: dbError } = await supabase
+    .from("users")
+    .update({ 
+      full_name: fullName,
+      avatar_url: avatarUrl
+    })
+    .eq("auth_user_id", user.id);
+
+  if (dbError) {
+    console.error("Failed to sync profile to users table:", dbError);
+  }
+
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Profile updated successfully.")}`);
 }
@@ -107,13 +139,37 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
             <h2 className="text-xl font-bold text-main">Personal Profile</h2>
           </div>
           <Card className="p-8">
-            <form action={updateProfileDetails} className="space-y-6">
+            <form action={updateProfileDetails} className="space-y-10">
               <input type="hidden" name="organization_slug" value={orgSlug} />
+              
+              <div className="space-y-4">
+                <label className="text-sm font-bold uppercase tracking-wider text-muted">Profile Avatar</label>
+                <div className="grid grid-cols-5 sm:grid-cols-10 gap-3">
+                  {AVATARS.map((avatar) => (
+                    <label key={avatar.name} className="relative cursor-pointer group">
+                      <input 
+                        type="radio" 
+                        name="avatar_url" 
+                        value={avatar.url} 
+                        className="peer sr-only" 
+                        defaultChecked={(user.user_metadata as any)?.avatar_url === avatar.url}
+                      />
+                      <div className="aspect-square rounded-2xl border-2 border-soft bg-slate-50 overflow-hidden transition-all peer-checked:border-violet-600 peer-checked:ring-2 peer-checked:ring-violet-600/20 group-hover:border-violet-200 shadow-sm">
+                        <img src={avatar.url} alt={avatar.name} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                         <span className="text-[10px] font-bold text-muted bg-white px-1.5 py-0.5 rounded border border-soft shadow-sm">{avatar.name}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid gap-6 sm:grid-cols-2">
                 <Input label="Full Name" name="full_name" defaultValue={String((user.user_metadata as any)?.full_name ?? "")} placeholder="Enter your name" />
                 <Input label="Job Title" name="job_title" defaultValue={String((user.user_metadata as any)?.job_title ?? "")} placeholder="Product Designer, Developer, etc." />
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end pt-4 border-t border-soft">
                 <Button type="submit">Update Profile</Button>
               </div>
             </form>

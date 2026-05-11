@@ -21,10 +21,12 @@ class UserCreate(BaseModel):
     full_name: str | None = None
     password: str
     role_key: str = "member"
+    avatar_url: str | None = None
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
+    avatar_url: str | None = None
 
 
 class WorkspaceUpdate(BaseModel):

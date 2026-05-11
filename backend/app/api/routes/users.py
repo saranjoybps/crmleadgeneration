@@ -26,3 +26,10 @@ def create_user(
     supabase = get_supabase_client()
     user = UserService.create_user(supabase, payload, ctx, dbg=dbg)
     return response(user)
+
+
+@router.patch("/{user_id}")
+def update_user(user_id: str, payload: UserUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    user = UserService.update_user(supabase, user_id, payload, ctx)
+    return response(user)

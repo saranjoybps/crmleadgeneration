@@ -25,6 +25,7 @@ type DashboardSidebarProps = {
   basePath?: string;
   organizationName?: string;
   role: AppRole;
+  avatarUrl?: string;
 };
 
 const MAIN_LINKS = [
@@ -40,7 +41,7 @@ function isLinkActive(pathname: string, href: string) {
   return href.endsWith("/dashboard") ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function DashboardSidebar({ email, basePath = "", organizationName, role }: DashboardSidebarProps) {
+export function DashboardSidebar({ email, basePath = "", organizationName, role, avatarUrl }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const links = MAIN_LINKS.filter((item) => (item.roles as readonly string[]).includes(role));
@@ -120,8 +121,12 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role 
           
           <div className="rounded-2xl bg-indigo-900/50 p-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white shadow-inner">
-                {email[0].toUpperCase()}
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white shadow-inner overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  email[0].toUpperCase()
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold text-white">{email}</p>
