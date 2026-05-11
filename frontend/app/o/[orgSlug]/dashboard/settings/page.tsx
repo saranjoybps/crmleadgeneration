@@ -1,10 +1,15 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { User, Shield, Palette, Info, LogOut, Globe, Mail, Briefcase } from "lucide-react";
 
 import { logout } from "@/app/actions/auth";
 import { ThemePreference } from "@/components/ThemePreference";
 import { canManageOrganizationUsers, getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
 
 type SettingsPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -19,15 +24,10 @@ function cleanOptional(value: FormDataEntryValue | null): string | null {
 
 async function updateProfileDetails(formData: FormData) {
   "use server";
-
   const organizationSlug = String(formData.get("organization_slug") ?? "").trim();
   const path = `/o/${organizationSlug}/dashboard/settings`;
-
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const { error } = await supabase.auth.updateUser({
@@ -44,16 +44,11 @@ async function updateProfileDetails(formData: FormData) {
 
 async function updateTenantDetails(formData: FormData) {
   "use server";
-
   const tenantId = String(formData.get("organization_id") ?? "").trim();
   const tenantSlug = String(formData.get("organization_slug") ?? "").trim();
   const path = `/o/${tenantSlug}/dashboard/settings`;
-
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const org = await getOrganizationContextOrRedirect(tenantSlug);
@@ -79,99 +74,120 @@ async function updateTenantDetails(formData: FormData) {
 export default async function SettingsPage({ params, searchParams }: SettingsPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const canManage = canManageOrganizationUsers(org.role);
 
-  const { data: tenant, error } = await supabase
-    .from("tenants")
-    .select("id,slug,name,contact_email,domain")
-    .eq("id", org.organization_id)
-    .maybeSingle();
-  const { data: roles, error: rolesError } = await supabase
-    .from("roles")
-    .select("id,key,label")
-    .order("created_at", { ascending: true });
+  const [tenantRes, rolesRes] = await Promise.all([
+    supabase.from("tenants").select("id,slug,name,contact_email,domain").eq("id", org.organization_id).maybeSingle(),
+    supabase.from("roles").select("id,key,label").order("created_at", { ascending: true })
+  ]);
 
-  if (error || !tenant) {
-    return <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error?.message ?? "Tenant not found."}</p>;
-  }
-  if (rolesError) {
-    return <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{rolesError.message}</p>;
-  }
+  if (tenantRes.error || !tenantRes.data) return <p className="p-6 text-red-600">Tenant not found.</p>;
+  const tenant = tenantRes.data;
+  const roles = rolesRes.data ?? [];
 
   return (
-    <section className="space-y-6">
-      {query.error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{query.error}</p> : null}
-      {query.success ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{query.success}</p> : null}
+    <div className="max-w-4xl space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <header>
+        <h1 className="text-3xl font-bold tracking-tight text-main">Settings</h1>
+        <p className="text-muted">Manage your personal profile and organization preferences.</p>
+      </header>
 
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-main">Tenant Details</h3>
-        <form action={updateTenantDetails} className="mt-4 grid gap-3 md:grid-cols-2">
-          <input type="hidden" name="organization_id" value={tenant.id} />
-          <input type="hidden" name="organization_slug" value={tenant.slug} />
-          <label className="text-sm text-main">
-            Workspace Name
-            <input name="name" defaultValue={tenant.name ?? ""} disabled={!canManage} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </label>
-          <label className="text-sm text-main">
-            Contact Email
-            <input name="contact_email" type="email" defaultValue={tenant.contact_email ?? ""} disabled={!canManage} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </label>
-          <label className="text-sm text-main md:col-span-2">
-            Domain
-            <input name="domain" defaultValue={tenant.domain ?? ""} disabled={!canManage} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </label>
-          {canManage ? <button type="submit" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">Save Tenant</button> : null}
-        </form>
-      </article>
+      {query.error && <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm">{query.error}</div>}
+      {query.success && <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl text-sm">{query.success}</div>}
 
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-main">Profile</h3>
-        <form action={updateProfileDetails} className="mt-4 grid gap-3 md:grid-cols-2">
-          <input type="hidden" name="organization_slug" value={org.organization_slug} />
-          <label className="text-sm text-main">
-            Full Name
-            <input name="full_name" defaultValue={String((user.user_metadata as Record<string, unknown> | null)?.full_name ?? "")} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </label>
-          <label className="text-sm text-main">
-            Job Title
-            <input name="job_title" defaultValue={String((user.user_metadata as Record<string, unknown> | null)?.job_title ?? "")} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-          </label>
-          <button type="submit" className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">Save Profile</button>
-        </form>
-      </article>
+      <div className="grid gap-10">
+        <section className="space-y-6">
+          <div className="flex items-center gap-3 border-b border-soft pb-4">
+            <User className="h-5 w-5 text-violet-600" />
+            <h2 className="text-xl font-bold text-main">Personal Profile</h2>
+          </div>
+          <Card className="p-8">
+            <form action={updateProfileDetails} className="space-y-6">
+              <input type="hidden" name="organization_slug" value={orgSlug} />
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Input label="Full Name" name="full_name" defaultValue={String((user.user_metadata as any)?.full_name ?? "")} placeholder="Enter your name" />
+                <Input label="Job Title" name="job_title" defaultValue={String((user.user_metadata as any)?.job_title ?? "")} placeholder="Product Designer, Developer, etc." />
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit">Update Profile</Button>
+              </div>
+            </form>
+          </Card>
+        </section>
 
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-main">Theme</h3>
-        <div className="mt-4"><ThemePreference /></div>
-      </article>
+        <section className="space-y-6">
+          <div className="flex items-center gap-3 border-b border-soft pb-4">
+            <Shield className="h-5 w-5 text-violet-600" />
+            <h2 className="text-xl font-bold text-main">Organization Workspace</h2>
+          </div>
+          <Card className="p-8">
+            <form action={updateTenantDetails} className="space-y-6">
+              <input type="hidden" name="organization_id" value={tenant.id} />
+              <input type="hidden" name="organization_slug" value={tenant.slug} />
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Input label="Workspace Name" name="name" defaultValue={tenant.name ?? ""} disabled={!canManage} />
+                <Input label="Support Email" name="contact_email" type="email" defaultValue={tenant.contact_email ?? ""} disabled={!canManage} />
+                <div className="sm:col-span-2">
+                  <Input label="Custom Domain" name="domain" defaultValue={tenant.domain ?? ""} disabled={!canManage} placeholder="crm.yourcompany.com" />
+                </div>
+              </div>
+              {canManage && (
+                <div className="flex justify-end pt-2">
+                  <Button type="submit">Save Organization</Button>
+                </div>
+              )}
+            </form>
+          </Card>
+        </section>
 
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-main">Available Roles</h3>
-        <p className="mt-1 text-sm text-muted">Roles configured in your workspace database.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {(roles ?? []).map((role) => (
-            <span key={role.id} className="rounded-full border border-soft px-3 py-1 text-xs font-medium text-main">
-              {role.label} ({role.key})
-            </span>
-          ))}
+        <section className="space-y-6">
+          <div className="flex items-center gap-3 border-b border-soft pb-4">
+            <Palette className="h-5 w-5 text-violet-600" />
+            <h2 className="text-xl font-bold text-main">Appearance</h2>
+          </div>
+          <Card className="p-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div>
+                <h3 className="font-bold text-main">Theme Mode</h3>
+                <p className="text-sm text-muted">Choose how JOY CRM looks on your device.</p>
+              </div>
+              <ThemePreference />
+            </div>
+          </Card>
+        </section>
+
+        <section className="space-y-6">
+          <div className="flex items-center gap-3 border-b border-soft pb-4">
+            <Info className="h-5 w-5 text-violet-600" />
+            <h2 className="text-xl font-bold text-main">System Roles</h2>
+          </div>
+          <Card className="p-8">
+            <p className="text-sm text-muted mb-6">These are the access levels configured for this workspace.</p>
+            <div className="flex flex-wrap gap-3">
+              {roles.map((role) => (
+                <div key={role.id} className="flex items-center gap-2 rounded-2xl border border-soft px-4 py-2 bg-slate-50">
+                  <span className="text-sm font-bold text-main">{role.label}</span>
+                  <Badge variant="outline" className="text-[10px] lowercase">{role.key}</Badge>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </section>
+
+        <div className="pt-10 border-t border-soft">
+          <form action={logout}>
+            <Button variant="danger" type="submit" className="gap-2">
+              <LogOut className="h-4 w-4" />
+              Sign Out of Session
+            </Button>
+          </form>
         </div>
-      </article>
-
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h3 className="text-lg font-semibold text-main">Session</h3>
-        <form action={logout} className="mt-4">
-          <button type="submit" className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Logout</button>
-        </form>
-      </article>
-    </section>
+      </div>
+    </div>
   );
 }

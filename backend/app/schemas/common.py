@@ -23,6 +23,10 @@ class UserCreate(BaseModel):
     role_key: str = "member"
 
 
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+
+
 class WorkspaceUpdate(BaseModel):
     name: str | None = None
     contact_email: str | None = None

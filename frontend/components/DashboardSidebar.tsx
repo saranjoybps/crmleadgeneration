@@ -1,10 +1,24 @@
 "use client";
 
+import { clsx, type ClassValue } from "clsx";
+import { 
+  LayoutDashboard, 
+  Briefcase, 
+  Ticket, 
+  CheckSquare, 
+  Users, 
+  Settings, 
+  LogOut,
+  Menu,
+  X
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 
 import { logout } from "@/app/actions/auth";
 import type { AppRole } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 type DashboardSidebarProps = {
   email: string;
@@ -14,12 +28,12 @@ type DashboardSidebarProps = {
 };
 
 const MAIN_LINKS = [
-  { href: "/dashboard", label: "Dashboard", roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/projects", label: "Projects", roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tickets", label: "Tickets", roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tasks", label: "Tasks", roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/users", label: "Users", roles: ["owner", "admin"] },
-  { href: "/dashboard/settings", label: "Settings", roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/users", label: "Users", icon: Users, roles: ["owner", "admin"] },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
 ] as const;
 
 function isLinkActive(pathname: string, href: string) {
@@ -28,46 +42,104 @@ function isLinkActive(pathname: string, href: string) {
 
 export function DashboardSidebar({ email, basePath = "", organizationName, role }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
   const links = MAIN_LINKS.filter((item) => (item.roles as readonly string[]).includes(role));
 
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
+
   return (
-    <aside className="flex w-full flex-col bg-gradient-to-b from-[#2a1a77] via-[#2b1f84] to-[#221567] px-4 py-6 text-violet-100 md:h-screen md:w-[280px] md:shrink-0 md:overflow-hidden md:px-5">
-      <div className="mb-7 px-4">
-        <h2 className="text-2xl font-semibold text-white ">JOY CRM</h2>
+    <>
+      {/* Mobile Header */}
+      <div className="flex h-16 items-center justify-between border-b border-soft bg-white px-4 md:hidden">
+        <h2 className="text-xl font-bold tracking-tight text-violet-600">JOY CRM</h2>
+        <button 
+          onClick={() => setIsOpen(true)}
+          className="rounded-lg p-2 text-muted hover:bg-slate-50"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
       </div>
 
-      <nav className="space-y-2">
-        {links.map((link) => {
-          const href = `${basePath}${link.href}`;
-          const active = isLinkActive(pathname, href);
-          return (
-            <Link
-              key={link.href}
-              href={href}
-              className={`flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                active ? "bg-violet-300/40 text-white shadow-sm" : "text-violet-100/90 hover:bg-violet-300/15"
-              }`}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Sidebar Overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm md:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
 
-      <div className="mt-auto space-y-2 border-t border-violet-300/20 pt-5">
-        {organizationName ? <p className="rounded-lg bg-white/10 px-3 py-1.5 text-xs uppercase tracking-widest text-violet-100/80">{organizationName}</p> : null}
-        <div className="mt-3 rounded-xl bg-black/20 px-3 py-3">
-          <p className="text-xs uppercase tracking-widest text-violet-100/70">{role}</p>
-          <div className="mt-1 flex items-center justify-between gap-2">
-            <p className="truncate text-sm text-white">{email}</p>
-            <form action={logout}>
-              <button type="submit" className="rounded-md p-1.5 text-violet-100/80 transition hover:bg-violet-300/20 hover:text-white">
-                Logout
+      {/* Sidebar Content */}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-[70] flex w-72 flex-col bg-[#1e1b4b] text-indigo-100 transition-transform duration-300 md:relative md:z-0 md:translate-x-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="flex h-20 items-center justify-between px-6">
+          <h2 className="text-2xl font-bold tracking-tighter text-white">JOY CRM</h2>
+          <button 
+            onClick={() => setIsOpen(false)}
+            className="rounded-lg p-2 text-indigo-300 hover:bg-indigo-800 md:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <nav className="space-y-1.5">
+            {links.map((link) => {
+              const href = `${basePath}${link.href}`;
+              const active = isLinkActive(pathname, href);
+              const Icon = link.icon;
+              return (
+                <Link
+                  key={link.href}
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all",
+                    active 
+                      ? "bg-violet-600 text-white shadow-lg shadow-violet-900/20" 
+                      : "text-indigo-200/80 hover:bg-indigo-800 hover:text-white"
+                  )}
+                >
+                  <Icon className={cn("h-5 w-5 transition-colors", active ? "text-white" : "text-indigo-400")} />
+                  {link.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div className="border-t border-indigo-800/60 p-4">
+          {organizationName && (
+            <div className="mb-4 rounded-xl bg-indigo-900/40 px-4 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-indigo-400">Organization</p>
+              <p className="truncate text-sm font-semibold text-white">{organizationName}</p>
+            </div>
+          )}
+          
+          <div className="rounded-2xl bg-indigo-900/50 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white shadow-inner">
+                {email[0].toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-white">{email}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">{role}</p>
+              </div>
+            </div>
+            <form action={logout} className="mt-4">
+              <button 
+                type="submit" 
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-800/50 py-2.5 text-xs font-bold text-indigo-100 transition-colors hover:bg-red-500/20 hover:text-red-200"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Sign Out
               </button>
             </form>
           </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

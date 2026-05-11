@@ -206,6 +206,16 @@ create table if not exists public.task_assignees (
   constraint task_assignees_unique unique (task_id, user_id)
 );
 
+create table if not exists public.ticket_comments (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  ticket_id uuid not null references public.tickets(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ----------
 -- Triggers and helper functions
 -- ----------
@@ -321,12 +331,10 @@ begin
   from public.tasks
   where ticket_id = p_ticket_id;
 
-  if v_total = 0 then
-    update public.tickets set status = 'open', updated_at = now() where id = p_ticket_id and status <> 'open';
-  elsif v_total = v_closed then
+  if v_total > 0 and v_total = v_closed then
     update public.tickets set status = 'closed', updated_at = now() where id = p_ticket_id and status <> 'closed';
-  else
-    update public.tickets set status = 'in_progress', updated_at = now() where id = p_ticket_id and status <> 'in_progress';
+  elsif v_total > 0 then
+    update public.tickets set status = 'in_progress', updated_at = now() where id = p_ticket_id and status = 'closed';
   end if;
 end;
 $$;
@@ -574,7 +582,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks']
+  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks','ticket_comments']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -647,6 +655,7 @@ alter table public.tickets enable row level security;
 alter table public.ticket_watchers enable row level security;
 alter table public.tasks enable row level security;
 alter table public.task_assignees enable row level security;
+alter table public.ticket_comments enable row level security;
 
 drop policy if exists roles_select_authenticated on public.roles;
 create policy roles_select_authenticated on public.roles
@@ -820,6 +829,26 @@ drop policy if exists task_assignees_manage_admin on public.task_assignees;
 create policy task_assignees_manage_admin on public.task_assignees
 for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
 with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists ticket_comments_select_scoped on public.ticket_comments;
+create policy ticket_comments_select_scoped on public.ticket_comments
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists ticket_comments_insert_member on public.ticket_comments;
+create policy ticket_comments_insert_member on public.ticket_comments
+for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists ticket_comments_update_self on public.ticket_comments;
+create policy ticket_comments_update_self on public.ticket_comments
+for update using (user_id = public.current_app_user_id())
+with check (user_id = public.current_app_user_id());
+
+drop policy if exists ticket_comments_delete_self_or_admin on public.ticket_comments;
+create policy ticket_comments_delete_self_or_admin on public.ticket_comments
+for delete using (
+  user_id = public.current_app_user_id()
+  or public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+);
 
 -- ----------
 -- RPC grants

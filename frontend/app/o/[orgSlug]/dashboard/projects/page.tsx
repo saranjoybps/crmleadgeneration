@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Plus, Info, Edit, Trash2, UserPlus, X } from "lucide-react";
 
 import { ProjectMembersField } from "@/components/ProjectMembersField";
+import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
+import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 
 type ProjectsPageProps = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ error?: string; success?: string; modal?: "view" | "edit" | "delete"; project?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; modal?: "view" | "edit" | "delete" | "create"; project?: string }>;
 };
 
 type UserOption = { user_id: string; email: string };
@@ -27,15 +33,6 @@ function resolveJoinedUserName(value: unknown): string {
   return "";
 }
 
-async function getApiContext(orgSlug: string) {
-  const supabase = await createClient();
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!apiBase || !accessToken) return null;
-  return { apiBase, accessToken };
-}
-
 async function createProject(formData: FormData) {
   "use server";
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
@@ -43,18 +40,23 @@ async function createProject(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
   const org = await getOrganizationContextOrRedirect(orgSlug);
-  if (!(org.role === "owner" || org.role === "admin")) redirect(`${path}?error=${encodeURIComponent("Only owner/admin can create projects.")}`);
-  if (!name) redirect(`${path}?error=${encodeURIComponent("Project name is required.")}`);
-  const api = await getApiContext(orgSlug);
-  if (!api) redirect(`${path}?error=${encodeURIComponent("API base URL or session missing.")}`);
+  
+  if (!(org.role === "owner" || org.role === "admin")) {
+    redirect(`${path}?error=${encodeURIComponent("Only owner/admin can create projects.")}`);
+  }
+  if (!name) {
+    redirect(`${path}?error=${encodeURIComponent("Project name is required.")}`);
+  }
+
   const ids = formData.getAll("member_user_ids").map((value) => String(value).trim()).filter(Boolean);
-  const resp = await fetch(`${api.apiBase}/api/v1/projects`, {
+  
+  const { error } = await apiRequest<ProjectRow>("/api/v1/projects", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug },
-    body: JSON.stringify({ name, description: description || null, status: "active", member_user_ids: ids }),
-    cache: "no-store",
+    orgSlug,
+    body: { name, description: description || null, status: "active", member_user_ids: ids },
   });
-  if (!resp.ok) redirect(`${path}?error=${encodeURIComponent("Unable to create project.")}`);
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Project created.")}`);
 }
@@ -67,15 +69,14 @@ async function updateProject(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const status = String(formData.get("status") ?? "active").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
-  const api = await getApiContext(orgSlug);
-  if (!api) redirect(`${path}?error=${encodeURIComponent("API base URL or session missing.")}`);
-  const resp = await fetch(`${api.apiBase}/api/v1/projects/${encodeURIComponent(projectId)}`, {
+
+  const { error } = await apiRequest<ProjectRow>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug },
-    body: JSON.stringify({ name: name || undefined, description: description || null, status }),
-    cache: "no-store",
+    orgSlug,
+    body: { name: name || undefined, description: description || null, status },
   });
-  if (!resp.ok) redirect(`${path}?error=${encodeURIComponent("Failed to update project.")}`);
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Project updated.")}`);
 }
@@ -85,14 +86,13 @@ async function deleteProject(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const projectId = String(formData.get("project_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
-  const api = await getApiContext(orgSlug);
-  if (!api) redirect(`${path}?error=${encodeURIComponent("API base URL or session missing.")}`);
-  const resp = await fetch(`${api.apiBase}/api/v1/projects/${encodeURIComponent(projectId)}`, {
+
+  const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug },
-    cache: "no-store",
+    orgSlug,
   });
-  if (!resp.ok) redirect(`${path}?error=${encodeURIComponent("Failed to delete project.")}`);
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Project deleted.")}`);
 }
@@ -103,17 +103,16 @@ async function addProjectMember(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const userId = String(formData.get("user_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
-  const api = await getApiContext(orgSlug);
-  if (!api) redirect(`${path}?error=${encodeURIComponent("API base URL or session missing.")}`);
-  const resp = await fetch(`${api.apiBase}/api/v1/projects/${encodeURIComponent(projectId)}/members`, {
+
+  const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/members`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug },
-    body: JSON.stringify({ user_id: userId }),
-    cache: "no-store",
+    orgSlug,
+    body: { user_id: userId },
   });
-  if (!resp.ok) redirect(`${path}?error=${encodeURIComponent("Failed to add member.")}`);
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
-  redirect(`${path}?success=${encodeURIComponent("Project member added.")}&modal=edit&project=${encodeURIComponent(projectId)}`);
+  redirect(`${path}?success=${encodeURIComponent("Member added.")}&modal=edit&project=${encodeURIComponent(projectId)}`);
 }
 
 async function removeProjectMember(formData: FormData) {
@@ -122,16 +121,15 @@ async function removeProjectMember(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const userId = String(formData.get("user_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
-  const api = await getApiContext(orgSlug);
-  if (!api) redirect(`${path}?error=${encodeURIComponent("API base URL or session missing.")}`);
-  const resp = await fetch(`${api.apiBase}/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
+
+  const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug },
-    cache: "no-store",
+    orgSlug,
   });
-  if (!resp.ok) redirect(`${path}?error=${encodeURIComponent("Failed to remove member.")}`);
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
-  redirect(`${path}?success=${encodeURIComponent("Project member removed.")}&modal=edit&project=${encodeURIComponent(projectId)}`);
+  redirect(`${path}?success=${encodeURIComponent("Member removed.")}&modal=edit&project=${encodeURIComponent(projectId)}`);
 }
 
 export default async function ProjectsPage({ params, searchParams }: ProjectsPageProps) {
@@ -139,12 +137,10 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const supabase = await createClient();
-  const api = await getApiContext(orgSlug);
-  if (!api) return <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">API base URL or session missing.</p>;
 
-  const [projectsResp, usersResp, membersResp] = await Promise.all([
-    fetch(`${api.apiBase}/api/v1/projects`, { headers: { Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug }, cache: "no-store" }),
-    fetch(`${api.apiBase}/api/v1/users?limit=200&offset=0`, { headers: { Authorization: `Bearer ${api.accessToken}`, "X-Org-Slug": orgSlug }, cache: "no-store" }),
+  const [projectsRes, usersRes, membersResp] = await Promise.all([
+    apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
+    apiRequest<Array<{ user_id: string; users?: unknown }>>("/api/v1/users?limit=200&offset=0", { orgSlug }),
     supabase
       .from("project_members")
       .select("project_id,user_id,users!project_members_user_id_fkey(email,full_name)")
@@ -152,146 +148,325 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
       .eq("is_active", true),
   ]);
 
-  const projectsBody = (await projectsResp.json().catch(() => null)) as { data?: ProjectRow[]; error?: { message?: string } } | null;
-  if (!projectsResp.ok) return <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{projectsBody?.error?.message ?? "Failed to load projects."}</p>;
-  const usersBody = (await usersResp.json().catch(() => null)) as { data?: Array<{ user_id: string; users?: unknown }> } | null;
+  if (projectsRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{projectsRes.error}</div>;
 
-  const projects = projectsBody?.data ?? [];
-  const users = usersBody?.data ?? [];
-  const userOptions: UserOption[] = users.map((row) => ({ user_id: row.user_id, email: resolveJoinedUserEmail((row as { users?: unknown }).users) }));
-  const members = ((membersResp.data ?? []) as MemberRow[]);
+  const projects = projectsRes.data ?? [];
+  const users = usersRes.data ?? [];
+  const userOptions: UserOption[] = users.map((row) => ({
+    user_id: row.user_id,
+    email: resolveJoinedUserEmail((row as { users?: unknown }).users),
+  }));
+  const members = (membersResp.data ?? []) as MemberRow[];
   const selectedProject = projects.find((p) => p.id === query.project);
   const selectedMembers = selectedProject ? members.filter((m) => m.project_id === selectedProject.id) : [];
   const selectedMemberIds = new Set(selectedMembers.map((m) => m.user_id));
   const unassignedUsers = userOptions.filter((u) => !selectedMemberIds.has(u.user_id));
 
+  const getStatusVariant = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "active": return "success";
+      case "on_hold": return "warning";
+      case "completed": return "info";
+      case "archived": return "default";
+      default: return "default";
+    }
+  };
+
   return (
-    <section className="space-y-6">
-      {query.error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{query.error}</p> : null}
-      {query.success ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{query.success}</p> : null}
-
-      {(org.role === "owner" || org.role === "admin") ? (
-        <article className="surface-card rounded-2xl border p-5 shadow-sm">
-          <h2 className="text-xl font-semibold text-main">Create Project</h2>
-          <form action={createProject} className="mt-4 grid gap-3">
-            <input type="hidden" name="organization_slug" value={org.organization_slug} />
-            <input name="name" required placeholder="Project name" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-            <textarea name="description" placeholder="Description" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm" />
-            <ProjectMembersField users={userOptions} />
-            <button type="submit" className="w-fit rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">Create Project</button>
-          </form>
-        </article>
-      ) : null}
-
-      <article className="surface-card rounded-2xl border p-5 shadow-sm">
-        <h2 className="text-xl font-semibold text-main">Projects</h2>
-        <div className="mt-4 space-y-3">
-          {projects.length === 0 ? <p className="text-sm text-muted">No projects yet.</p> : null}
-          {projects.map((project) => (
-            <div key={project.id} className="rounded-xl border border-soft p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-main">{project.name}</p>
-                  <p className="text-xs uppercase text-muted">{project.status}</p>
-                  <p className="mt-1 text-sm text-muted">{project.description ?? "No description"}</p>
-                </div>
-                <div className="flex gap-2 text-xs">
-                  <Link href={`/o/${org.organization_slug}/dashboard/projects?modal=view&project=${encodeURIComponent(project.id)}`} className="rounded-md border border-soft px-2 py-1">View</Link>
-                  {(org.role === "owner" || org.role === "admin") ? <Link href={`/o/${org.organization_slug}/dashboard/projects?modal=edit&project=${encodeURIComponent(project.id)}`} className="rounded-md border border-soft px-2 py-1">Edit</Link> : null}
-                  {(org.role === "owner" || org.role === "admin") ? <Link href={`/o/${org.organization_slug}/dashboard/projects?modal=delete&project=${encodeURIComponent(project.id)}`} className="rounded-md border border-red-300 px-2 py-1 text-red-700">Delete</Link> : null}
-                </div>
-              </div>
-            </div>
-          ))}
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-main">Projects</h1>
+          <p className="text-muted">Manage your organization&apos;s projects and team members.</p>
         </div>
-      </article>
+        {(org.role === "owner" || org.role === "admin") && (
+          <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`}>
+            <Button size="lg" className="gap-2">
+              <Plus className="h-5 w-5" />
+              New Project
+            </Button>
+          </Link>
+        )}
+      </header>
 
-      {selectedProject && query.modal ? (
-        <div className="fixed inset-0 z-50 bg-black/35">
-          <div className="absolute inset-y-0 right-0 h-full w-full max-w-2xl overflow-y-auto bg-white shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-main">{query.modal === "view" ? "Project Details" : query.modal === "edit" ? "Edit Project" : "Delete Project"}</h3>
-              <Link href={`/o/${org.organization_slug}/dashboard/projects`} className="rounded-md border border-soft px-2 py-1 text-xs">Close</Link>
+      {query.error && (
+        <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 shadow-sm animate-in zoom-in-95 duration-200">
+          <Info className="h-5 w-5 shrink-0 text-red-500" />
+          {query.error}
+        </div>
+      )}
+
+      {query.success && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-sm animate-in zoom-in-95 duration-200">
+          <Info className="h-5 w-5 shrink-0 text-emerald-500" />
+          {query.success}
+        </div>
+      )}
+
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {projects.length === 0 ? (
+          <div className="col-span-full flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-soft py-20 text-center">
+            <div className="rounded-full bg-violet-50 p-4 text-violet-500">
+              <Briefcase className="h-10 w-10" />
             </div>
-
-            {query.modal === "view" ? (
-              <div className="space-y-2 text-sm">
-                <p><span className="font-medium">Name:</span> {selectedProject.name}</p>
-                <p><span className="font-medium">Status:</span> {selectedProject.status}</p>
-                <p><span className="font-medium">Description:</span> {selectedProject.description ?? "No description"}</p>
-                <div>
-                  <p className="mb-1 font-medium">Members</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedMembers.length === 0 ? <p className="text-sm text-muted">No members assigned.</p> : null}
-                    {selectedMembers.map((m) => {
-                      const label = resolveJoinedUserName(m.users) || resolveJoinedUserEmail(m.users);
-                      return <span key={`${m.project_id}-${m.user_id}`} className="rounded-full bg-slate-100 px-3 py-1 text-xs">{label}</span>;
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {query.modal === "edit" && (org.role === "owner" || org.role === "admin") ? (
-              <div className="space-y-4">
-                <form action={updateProject} className="grid gap-3 md:grid-cols-3">
-                  <input type="hidden" name="organization_slug" value={org.organization_slug} />
-                  <input type="hidden" name="project_id" value={selectedProject.id} />
-                  <input name="name" defaultValue={selectedProject.name} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                  <select name="status" defaultValue={selectedProject.status} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
-                    <option value="active">active</option>
-                    <option value="on_hold">on_hold</option>
-                    <option value="completed">completed</option>
-                    <option value="archived">archived</option>
-                  </select>
-                  <button type="submit" className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white">Save</button>
-                  <textarea name="description" defaultValue={selectedProject.description ?? ""} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3" />
-                </form>
-
-                <div className="rounded-xl border border-soft p-3">
-                  <p className="mb-2 text-sm font-medium text-main">Assigned members</p>
-                  <div className="space-y-2">
-                    {selectedMembers.length === 0 ? <p className="text-sm text-muted">No members assigned.</p> : null}
-                    {selectedMembers.map((m) => {
-                      const label = resolveJoinedUserName(m.users) || resolveJoinedUserEmail(m.users);
-                      return (
-                        <form key={`${m.project_id}-${m.user_id}`} action={removeProjectMember} className="flex items-center justify-between rounded-lg border border-soft px-3 py-2">
-                          <input type="hidden" name="organization_slug" value={org.organization_slug} />
-                          <input type="hidden" name="project_id" value={selectedProject.id} />
-                          <input type="hidden" name="user_id" value={m.user_id} />
-                          <p className="text-sm">{label}</p>
-                          <button type="submit" className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700">Remove</button>
-                        </form>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <form action={addProjectMember} className="flex gap-2">
-                  <input type="hidden" name="organization_slug" value={org.organization_slug} />
-                  <input type="hidden" name="project_id" value={selectedProject.id} />
-                  <select name="user_id" required className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm">
-                    <option value="">Add member...</option>
-                    {unassignedUsers.map((u) => <option key={u.user_id} value={u.user_id}>{u.email}</option>)}
-                  </select>
-                  <button type="submit" className="rounded-xl border border-soft px-3 py-2 text-sm">Add</button>
-                </form>
-              </div>
-            ) : null}
-
-            {query.modal === "delete" && (org.role === "owner" || org.role === "admin") ? (
-              <div className="space-y-3">
-                <p className="text-sm text-main">Are you sure you want to delete <span className="font-semibold">{selectedProject.name}</span>?</p>
-                <form action={deleteProject}>
-                  <input type="hidden" name="organization_slug" value={org.organization_slug} />
-                  <input type="hidden" name="project_id" value={selectedProject.id} />
-                  <button type="submit" className="rounded-xl border border-red-300 px-4 py-2 text-sm font-semibold text-red-700">Delete Project</button>
-                </form>
-              </div>
-            ) : null}
+            <h3 className="mt-4 text-lg font-semibold text-main">No projects found</h3>
+            <p className="mt-1 text-muted">Get started by creating your first project.</p>
+            {(org.role === "owner" || org.role === "admin") && (
+              <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`} className="mt-6">
+                <Button variant="outline" className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create Project
+                </Button>
+              </Link>
+            )}
           </div>
-        </div>
-      ) : null}
-    </section>
+        ) : (
+          projects.map((project) => {
+            const projectMembers = members.filter(m => m.project_id === project.id);
+            return (
+              <div key={project.id} className="group relative flex flex-col rounded-3xl border border-soft bg-white p-6 shadow-sm transition-all hover:border-violet-200 hover:shadow-xl hover:shadow-violet-500/5">
+                <div className="mb-4 flex items-start justify-between">
+                  <Badge variant={getStatusVariant(project.status)}>{project.status}</Badge>
+                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Link href={`/o/${orgSlug}/dashboard/projects?modal=edit&project=${project.id}`}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg"><Edit className="h-4 w-4 text-muted" /></Button>
+                    </Link>
+                    <Link href={`/o/${orgSlug}/dashboard/projects?modal=delete&project=${project.id}`}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
+                    </Link>
+                  </div>
+                </div>
+                
+                <Link href={`/o/${orgSlug}/dashboard/projects?modal=view&project=${project.id}`} className="flex-1">
+                  <h3 className="text-xl font-bold text-main transition-colors group-hover:text-violet-600">{project.name}</h3>
+                  <p className="mt-2 line-clamp-2 text-sm text-muted leading-relaxed">
+                    {project.description ?? "No description provided."}
+                  </p>
+                </Link>
+
+                <div className="mt-6 flex items-center justify-between pt-6 border-t border-soft">
+                  <div className="flex -space-x-2 overflow-hidden">
+                    {projectMembers.slice(0, 3).map((m) => (
+                      <div key={m.user_id} title={resolveJoinedUserEmail(m.users)} className="inline-block h-8 w-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                        {resolveJoinedUserEmail(m.users)[0].toUpperCase()}
+                      </div>
+                    ))}
+                    {projectMembers.length > 3 && (
+                      <div className="inline-block h-8 w-8 rounded-full border-2 border-white bg-slate-50 flex items-center justify-center text-[10px] font-bold text-muted">
+                        +{projectMembers.length - 3}
+                      </div>
+                    )}
+                  </div>
+                  <Link href={`/o/${orgSlug}/dashboard/projects?modal=view&project=${project.id}`}>
+                    <Button variant="ghost" size="sm" className="text-violet-600 font-bold hover:bg-violet-50">View Details</Button>
+                  </Link>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* CREATE MODAL */}
+      <Modal 
+        isOpen={query.modal === "create"} 
+        closeHref={`/o/${orgSlug}/dashboard/projects`}
+        title="Create New Project"
+      >
+        <form action={createProject} className="space-y-6">
+          <input type="hidden" name="organization_slug" value={org.organization_slug} />
+          <Input label="Project Name" name="name" required placeholder="Enter project name..." />
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-main">Description</label>
+            <textarea 
+              name="description" 
+              rows={4} 
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" 
+              placeholder="What is this project about?"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-main">Initial Team Members</label>
+            <ProjectMembersField users={userOptions} />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <Link href={`/o/${orgSlug}/dashboard/projects`}>
+              <Button variant="outline" type="button">Cancel</Button>
+            </Link>
+            <Button type="submit">Create Project</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* VIEW MODAL */}
+      {selectedProject && (
+        <Modal 
+          isOpen={query.modal === "view"} 
+          closeHref={`/o/${orgSlug}/dashboard/projects`}
+          title={selectedProject.name}
+          size="lg"
+        >
+          <div className="space-y-8">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted">Status</p>
+                <Badge variant={getStatusVariant(selectedProject.status)}>{selectedProject.status}</Badge>
+              </div>
+              <div className="space-y-1 text-right">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted">Created At</p>
+                <p className="text-sm font-medium text-main">May 11, 2026</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted">Description</p>
+              <p className="text-sm leading-relaxed text-main">
+                {selectedProject.description ?? "No description provided for this project."}
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted">Team Members</p>
+                <Badge variant="outline">{selectedMembers.length} members</Badge>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {selectedMembers.length === 0 ? (
+                  <p className="col-span-full py-4 text-center text-sm text-muted">No members assigned.</p>
+                ) : (
+                  selectedMembers.map((m) => (
+                    <div key={m.user_id} className="flex items-center gap-3 rounded-xl border border-soft p-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
+                        {resolveJoinedUserEmail(m.users)[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-main">{resolveJoinedUserName(m.users) || "Anonymous"}</p>
+                        <p className="truncate text-xs text-muted">{resolveJoinedUserEmail(m.users)}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* EDIT MODAL */}
+      {selectedProject && (
+        <Modal 
+          isOpen={query.modal === "edit"} 
+          closeHref={`/o/${orgSlug}/dashboard/projects`}
+          title={`Edit ${selectedProject.name}`}
+          size="lg"
+        >
+          <div className="space-y-10">
+            <form action={updateProject} className="space-y-6">
+              <input type="hidden" name="organization_slug" value={org.organization_slug} />
+              <input type="hidden" name="project_id" value={selectedProject.id} />
+              <div className="grid gap-6 sm:grid-cols-2">
+                <Input label="Project Name" name="name" defaultValue={selectedProject.name} required />
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-main">Status</label>
+                  <select 
+                    name="status" 
+                    defaultValue={selectedProject.status}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-main">Description</label>
+                <textarea 
+                  name="description" 
+                  defaultValue={selectedProject.description ?? ""}
+                  rows={3} 
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+              <div className="flex justify-end pt-2">
+                <Button type="submit">Save Changes</Button>
+              </div>
+            </form>
+
+            <div className="rounded-3xl border border-soft p-6 bg-slate-50/50">
+              <div className="mb-6 flex items-center justify-between">
+                <h4 className="text-sm font-bold uppercase tracking-wider text-main">Manage Team</h4>
+                <Link href={`/o/${orgSlug}/dashboard/projects?modal=edit&project=${selectedProject.id}`}>
+                  <Badge variant="info">Active</Badge>
+                </Link>
+              </div>
+              
+              <div className="space-y-3">
+                {selectedMembers.map((m) => (
+                  <div key={m.user_id} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold">
+                        {resolveJoinedUserEmail(m.users)[0].toUpperCase()}
+                      </div>
+                      <p className="text-sm font-medium">{resolveJoinedUserEmail(m.users)}</p>
+                    </div>
+                    <form action={removeProjectMember}>
+                      <input type="hidden" name="organization_slug" value={org.organization_slug} />
+                      <input type="hidden" name="project_id" value={selectedProject.id} />
+                      <input type="hidden" name="user_id" value={m.user_id} />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500"><X className="h-4 w-4" /></Button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+
+              <form action={addProjectMember} className="mt-6 flex gap-2">
+                <input type="hidden" name="organization_slug" value={org.organization_slug} />
+                <input type="hidden" name="project_id" value={selectedProject.id} />
+                <select name="user_id" required className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+                  <option value="">Add member...</option>
+                  {unassignedUsers.map((u) => <option key={u.user_id} value={u.user_id}>{u.email}</option>)}
+                </select>
+                <Button variant="secondary" className="gap-2">
+                  <UserPlus className="h-4 w-4" />
+                  Add
+                </Button>
+              </form>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* DELETE MODAL */}
+      {selectedProject && (
+        <Modal 
+          isOpen={query.modal === "delete"} 
+          closeHref={`/o/${orgSlug}/dashboard/projects`}
+          title="Confirm Deletion"
+          size="sm"
+        >
+          <div className="space-y-6 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <Trash2 className="h-8 w-8" />
+            </div>
+            <div>
+              <h4 className="text-xl font-bold text-main">Delete Project?</h4>
+              <p className="mt-2 text-sm text-muted">
+                Are you sure you want to delete <span className="font-bold text-main">{selectedProject.name}</span>? This action cannot be undone and will delete all associated data.
+              </p>
+            </div>
+            <form action={deleteProject} className="flex gap-3 pt-2">
+              <Link href={`/o/${orgSlug}/dashboard/projects`} className="flex-1">
+                <Button variant="outline" className="w-full">Cancel</Button>
+              </Link>
+              <input type="hidden" name="organization_slug" value={org.organization_slug} />
+              <input type="hidden" name="project_id" value={selectedProject.id} />
+              <Button variant="danger" type="submit" className="flex-1 bg-red-600 text-white hover:bg-red-700">Delete</Button>
+            </form>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
