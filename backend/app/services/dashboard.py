@@ -41,10 +41,21 @@ class DashboardService:
             .execute()
             .count
         )
+
+        todos_count = (
+            supabase.table("todos")
+            .select("id", count="exact")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_completed", False)
+            .execute()
+            .count
+        )
         
         return {
             "active_projects": projects_count or 0,
             "open_tickets": tickets_count or 0,
             "pending_tasks": tasks_count or 0,
             "team_members": users_count or 0,
+            "pending_todos": todos_count or 0,
         }

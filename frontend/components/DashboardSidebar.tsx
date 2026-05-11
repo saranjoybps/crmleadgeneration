@@ -10,7 +10,8 @@ import {
   Settings, 
   LogOut,
   Menu,
-  X
+  X,
+  ListChecks
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -33,6 +34,7 @@ const MAIN_LINKS = [
   { href: "/dashboard/projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
   { href: "/dashboard/users", label: "Users", icon: Users, roles: ["owner", "admin"] },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
 ] as const;

@@ -1,4 +1,4 @@
-import { Briefcase, Ticket, CheckSquare, Users, ArrowRight } from "lucide-react";
+import { Briefcase, Ticket, CheckSquare, Users, ArrowRight, ListChecks } from "lucide-react";
 import Link from "next/link";
 
 import { apiRequest } from "@/lib/api-server";
@@ -11,6 +11,7 @@ type DashboardSummary = {
   open_tickets: number;
   pending_tasks: number;
   team_members: number;
+  pending_todos: number;
 };
 
 export default async function DashboardPage({ params }: { params: Promise<{ orgSlug: string }> }) {
@@ -23,7 +24,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgS
     { label: "Active Projects", value: summary?.active_projects ?? 0, icon: Briefcase, color: "text-blue-600", bg: "bg-blue-50", href: `/o/${orgSlug}/dashboard/projects` },
     { label: "Open Tickets", value: summary?.open_tickets ?? 0, icon: Ticket, color: "text-amber-600", bg: "bg-amber-50", href: `/o/${orgSlug}/dashboard/tickets` },
     { label: "Pending Tasks", value: summary?.pending_tasks ?? 0, icon: CheckSquare, color: "text-violet-600", bg: "bg-violet-50", href: `/o/${orgSlug}/dashboard/tasks` },
-    { label: "Team Members", value: summary?.team_members ?? 0, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50", href: `/o/${orgSlug}/dashboard/users` },
+    { label: "Pending Todos", value: summary?.pending_todos ?? 0, icon: ListChecks, color: "text-emerald-600", bg: "bg-emerald-50", href: `/o/${orgSlug}/dashboard/todos` },
   ];
 
   return (

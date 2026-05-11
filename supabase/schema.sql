@@ -216,6 +216,18 @@ create table if not exists public.ticket_comments (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.todos (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  title text not null,
+  description text null,
+  is_completed boolean not null default false,
+  due_date timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ----------
 -- Triggers and helper functions
 -- ----------
@@ -582,7 +594,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks','ticket_comments']
+  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks','ticket_comments','todos']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -629,6 +641,7 @@ create index if not exists idx_tickets_tenant_project_status on public.tickets(t
 create index if not exists idx_tasks_tenant_project_status on public.tasks(tenant_id, project_id, status, created_at desc);
 create index if not exists idx_tasks_ticket_status on public.tasks(ticket_id, status);
 create index if not exists idx_task_assignees_task_user on public.task_assignees(task_id, user_id);
+create index if not exists idx_todos_tenant_user_status on public.todos(tenant_id, user_id, is_completed, created_at desc);
 
 -- ----------
 -- Seed roles
@@ -848,6 +861,37 @@ create policy ticket_comments_delete_self_or_admin on public.ticket_comments
 for delete using (
   user_id = public.current_app_user_id()
   or public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+);
+
+-- ----------
+-- Todos RLS
+-- ----------
+alter table public.todos enable row level security;
+
+drop policy if exists todos_select_scoped on public.todos;
+create policy todos_select_scoped on public.todos
+for select using (public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[]));
+
+drop policy if exists todos_insert_scoped on public.todos;
+create policy todos_insert_scoped on public.todos
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[]));
+
+drop policy if exists todos_update_scoped on public.todos;
+create policy todos_update_scoped on public.todos
+for update using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
+);
+
+drop policy if exists todos_delete_scoped on public.todos;
+create policy todos_delete_scoped on public.todos
+for delete using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
 );
 
 -- ----------
