@@ -80,6 +80,12 @@ exception
 end $$;
 
 do $$ begin
+  if not exists (select 1 from pg_type where typname = 'dependency_type') then
+    create type public.dependency_type as enum ('FS', 'SS', 'FF', 'SF');
+  end if;
+end $$;
+
+do $$ begin
   if not exists (select 1 from pg_type where typname = 'priority_level') then
     create type public.priority_level as enum ('low', 'medium', 'high', 'urgent');
   end if;
@@ -154,6 +160,20 @@ create table if not exists public.tenant_invites (
   constraint tenant_invites_status_valid check (status in ('pending', 'accepted', 'revoked', 'expired'))
 );
 
+create table if not exists public.milestones (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  name text not null,
+  description text null,
+  due_date timestamptz not null,
+  status text not null default 'pending',
+  created_by uuid null references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint milestones_status_valid check (status in ('pending', 'completed', 'cancelled'))
+);
+
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -181,11 +201,13 @@ create table if not exists public.tickets (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
+  milestone_id uuid null references public.milestones(id) on delete set null,
   title text not null,
   description text null,
   type public.ticket_type not null default 'other',
   status public.ticket_status not null default 'open',
   priority public.priority_level not null default 'medium',
+  start_date timestamptz null,
   due_date timestamptz null,
   created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -210,11 +232,23 @@ create table if not exists public.tasks (
   description text null,
   priority public.priority_level not null default 'medium',
   status public.task_status not null default 'open',
+  start_date timestamptz null,
   due_date timestamptz null,
   parent_task_id uuid null constraint tasks_parent_task_id_fkey references public.tasks(id) on delete cascade,
   created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.task_dependencies (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  task_id uuid not null references public.tasks(id) on delete cascade,
+  depends_on_task_id uuid not null references public.tasks(id) on delete cascade,
+  dependency_type public.dependency_type not null default 'FS',
+  created_at timestamptz not null default now(),
+  constraint task_dependencies_unique unique (task_id, depends_on_task_id),
+  constraint task_dependencies_not_self check (task_id <> depends_on_task_id)
 );
 
 create table if not exists public.task_assignees (
@@ -397,10 +431,21 @@ begin
     if v_tenant is null or v_tenant <> new.tenant_id then
       raise exception 'Tenant mismatch for project member';
     end if;
+  elsif tg_table_name = 'milestones' then
+    select tenant_id into v_tenant from public.projects where id = new.project_id;
+    if v_tenant is null or v_tenant <> new.tenant_id then
+      raise exception 'Tenant mismatch for milestone';
+    end if;
   elsif tg_table_name = 'tickets' then
     select tenant_id into v_tenant from public.projects where id = new.project_id;
     if v_tenant is null or v_tenant <> new.tenant_id then
-      raise exception 'Tenant mismatch for ticket';
+      raise exception 'Tenant mismatch for ticket project';
+    end if;
+    if new.milestone_id is not null then
+      select tenant_id into v_tenant from public.milestones where id = new.milestone_id;
+      if v_tenant is null or v_tenant <> new.tenant_id then
+        raise exception 'Tenant mismatch for ticket milestone';
+      end if;
     end if;
   elsif tg_table_name = 'ticket_watchers' then
     select tenant_id into v_tenant from public.tickets where id = new.ticket_id;
@@ -415,6 +460,15 @@ begin
     select tenant_id into v_tenant from public.projects where id = new.project_id;
     if v_tenant is null or v_tenant <> new.tenant_id then
       raise exception 'Tenant mismatch for task project';
+    end if;
+  elsif tg_table_name = 'task_dependencies' then
+    select tenant_id into v_tenant from public.tasks where id = new.task_id;
+    if v_tenant is null or v_tenant <> new.tenant_id then
+      raise exception 'Tenant mismatch for task dependency (task)';
+    end if;
+    select tenant_id into v_tenant from public.tasks where id = new.depends_on_task_id;
+    if v_tenant is null or v_tenant <> new.tenant_id then
+      raise exception 'Tenant mismatch for task dependency (depends_on)';
     end if;
   elsif tg_table_name = 'task_assignees' then
     select tenant_id into v_tenant from public.tasks where id = new.task_id;
@@ -626,7 +680,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks','ticket_comments','todos']
+  FOREACH t IN ARRAY ARRAY['projects','project_members','tickets','tasks','ticket_comments','todos','milestones']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -635,6 +689,10 @@ END $$;
 
 drop trigger if exists trg_project_members_tenant_guard on public.project_members;
 create trigger trg_project_members_tenant_guard before insert or update on public.project_members
+for each row execute function public.enforce_linked_tenant_consistency();
+
+drop trigger if exists trg_milestones_tenant_guard on public.milestones;
+create trigger trg_milestones_tenant_guard before insert or update on public.milestones
 for each row execute function public.enforce_linked_tenant_consistency();
 
 drop trigger if exists trg_tickets_tenant_guard on public.tickets;
@@ -647,6 +705,10 @@ for each row execute function public.enforce_linked_tenant_consistency();
 
 drop trigger if exists trg_tasks_tenant_guard on public.tasks;
 create trigger trg_tasks_tenant_guard before insert or update on public.tasks
+for each row execute function public.enforce_linked_tenant_consistency();
+
+drop trigger if exists trg_task_dependencies_tenant_guard on public.task_dependencies;
+create trigger trg_task_dependencies_tenant_guard before insert or update on public.task_dependencies
 for each row execute function public.enforce_linked_tenant_consistency();
 
 drop trigger if exists trg_task_assignees_tenant_guard on public.task_assignees;
@@ -909,6 +971,26 @@ for insert with check (public.is_tenant_member(tenant_id));
 -- Todos RLS
 -- ----------
 alter table public.todos enable row level security;
+alter table public.milestones enable row level security;
+alter table public.task_dependencies enable row level security;
+
+drop policy if exists milestones_select_scoped on public.milestones;
+create policy milestones_select_scoped on public.milestones
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists milestones_manage_admin on public.milestones;
+create policy milestones_manage_admin on public.milestones
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+
+drop policy if exists task_dependencies_select_scoped on public.task_dependencies;
+create policy task_dependencies_select_scoped on public.task_dependencies
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists task_dependencies_manage_admin on public.task_dependencies;
+create policy task_dependencies_manage_admin on public.task_dependencies
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
 
 drop policy if exists todos_select_scoped on public.todos;
 create policy todos_select_scoped on public.todos

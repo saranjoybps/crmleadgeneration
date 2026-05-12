@@ -44,6 +44,21 @@ class RoleAssignment(BaseModel):
     role_key: str
 
 
+class MilestoneCreate(BaseModel):
+    project_id: str
+    name: str
+    description: str | None = None
+    due_date: str
+    status: str | None = "pending"
+
+
+class MilestoneUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    due_date: str | None = None
+    status: str | None = None
+
+
 class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
@@ -63,19 +78,23 @@ class ProjectMemberCreate(BaseModel):
 
 class TicketCreate(BaseModel):
     project_id: str
+    milestone_id: str | None = None
     title: str
     description: str | None = None
     type: str = "other"
     priority: str | None = "medium"
+    start_date: str | None = None
     due_date: str | None = None
     status: str | None = None
 
 
 class TicketUpdate(BaseModel):
+    milestone_id: str | None = None
     title: str | None = None
     description: str | None = None
     type: str | None = None
     priority: str | None = None
+    start_date: str | None = None
     due_date: str | None = None
     status: str | None = None
 
@@ -85,6 +104,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     status: str | None = None
     priority: str | None = "medium"
+    start_date: str | None = None
     due_date: str | None = None
     parent_task_id: str | None = None
     assignee_user_ids: list[str] | None = None
@@ -95,7 +115,13 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     status: str | None = None
     priority: str | None = None
+    start_date: str | None = None
     due_date: str | None = None
+
+
+class TaskDependencyCreate(BaseModel):
+    depends_on_task_id: str
+    dependency_type: str = "FS"
 
 
 class TaskAssigneesUpdate(BaseModel):

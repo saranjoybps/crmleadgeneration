@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, Query
 from app.api.utils import response
 from app.core.deps import RequestContext, require_roles
 from app.core.supabase_client import get_supabase_client
-from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate
+from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate, TaskDependencyCreate
 from app.services.tasks import TaskService
+from app.services.dependencies import TaskDependencyService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -64,3 +65,24 @@ def delete_task(task_id: str, ctx: RequestContext = Depends(require_roles("owner
     supabase = get_supabase_client()
     task = TaskService.delete_task(supabase, task_id, ctx)
     return response(task)
+
+
+@router.get("/{task_id}/dependencies")
+def list_dependencies(task_id: str, ctx: RequestContext = Depends(require_roles("owner", "admin", "member", "client"))):
+    supabase = get_supabase_client()
+    deps = TaskDependencyService.list_dependencies(supabase, task_id, ctx)
+    return response(deps)
+
+
+@router.post("/{task_id}/dependencies")
+def create_dependency(task_id: str, payload: TaskDependencyCreate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    dep = TaskDependencyService.create_dependency(supabase, task_id, payload, ctx)
+    return response(dep)
+
+
+@router.delete("/{task_id}/dependencies/{depends_on_task_id}")
+def delete_dependency(task_id: str, depends_on_task_id: str, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
+    supabase = get_supabase_client()
+    res = TaskDependencyService.delete_dependency(supabase, task_id, depends_on_task_id, ctx)
+    return response(res)

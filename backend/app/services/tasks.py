@@ -4,6 +4,7 @@ from postgrest.exceptions import APIError
 
 from app.core.deps import RequestContext
 from app.schemas.common import TaskAssigneesUpdate, TaskCreate, TaskUpdate
+from app.services.dependencies import TaskDependencyService
 
 
 class TaskService:
@@ -112,6 +113,7 @@ class TaskService:
                 "ticket_id": ticket_id,
                 "title": payload.title,
                 "description": payload.description,
+                "start_date": getattr(payload, "start_date", None),
                 "due_date": getattr(payload, "due_date", None),
                 "priority": getattr(payload, "priority", "medium"),
                 "parent_task_id": getattr(payload, "parent_task_id", None),
@@ -177,6 +179,10 @@ class TaskService:
             if due_date_val != "missing_attr":
                 update_data["due_date"] = due_date_val
 
+            start_date_val = getattr(payload, "start_date", "missing_attr")
+            if start_date_val != "missing_attr":
+                update_data["start_date"] = start_date_val
+
             updated = (
                 supabase.table("tasks")
                 .update(update_data)
@@ -190,6 +196,11 @@ class TaskService:
         row = (updated.data or [None])[0]
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
+
+        # If due_date was updated, reschedule successors
+        if "due_date" in update_data:
+            TaskDependencyService.reschedule_successors(supabase, task_id, ctx)
+
         return row
 
     @staticmethod

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Plus, Ticket, Info, Edit, Trash2, Split, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Ticket, Info, Edit, Trash2, Split, Clock, CheckCircle2, AlertCircle, Flag } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
@@ -11,31 +11,40 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { TicketComments } from "@/components/TicketComments";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 
 type TicketsPageProps = {
   params: Promise<{ orgSlug: string }>;
   searchParams: Promise<{ error?: string; success?: string; project_id?: string; modal?: "create" | "edit" | "delete"; ticket_id?: string }>;
 };
 
-function resolveJoinedProjectName(value: unknown): string {
-  if (Array.isArray(value)) return String(value[0]?.name ?? "-");
-  if (value && typeof value === "object" && "name" in value) return String((value as { name?: string }).name ?? "-");
-  return "-";
-}
+type Milestone = { id: string; name: string; project_id: string };
 
 async function createTicket(formData: FormData) {
   "use server";
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const projectId = String(formData.get("project_id") ?? "").trim();
+  const milestoneId = String(formData.get("milestone_id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const type = String(formData.get("type") ?? "other").trim();
+  const startDate = String(formData.get("start_date") ?? "").trim();
+  const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tickets`;
 
   const { error } = await apiRequest("/api/v1/tickets", {
     method: "POST",
     orgSlug,
-    body: { project_id: projectId, title, description: description || null, type, status: "open" },
+    body: { 
+      project_id: projectId, 
+      milestone_id: milestoneId || null, 
+      title, 
+      description: description || null, 
+      type, 
+      status: "open",
+      start_date: startDate || null,
+      due_date: dueDate || null
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -47,16 +56,27 @@ async function updateTicket(formData: FormData) {
   "use server";
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const ticketId = String(formData.get("ticket_id") ?? "").trim();
+  const milestoneId = String(formData.get("milestone_id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const status = String(formData.get("status") ?? "open").trim();
   const type = String(formData.get("type") ?? "other").trim();
+  const startDate = String(formData.get("start_date") ?? "").trim();
+  const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tickets`;
 
   const { error } = await apiRequest(`/api/v1/tickets/${encodeURIComponent(ticketId)}`, {
     method: "PATCH",
     orgSlug,
-    body: { title, description: description || null, status, type },
+    body: { 
+      title, 
+      description: description || null, 
+      status, 
+      type,
+      milestone_id: milestoneId || null,
+      start_date: startDate || null,
+      due_date: dueDate || null
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -88,7 +108,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
 
   const [projectsRes, ticketsRes] = await Promise.all([
     apiRequest<Array<{ id: string; name: string }>>("/api/v1/projects", { orgSlug }),
-    apiRequest<Array<{ id: string; title: string; type: string; status: string; project_id: string; description?: string }>>(
+    apiRequest<Array<{ id: string; title: string; type: string; status: string; project_id: string; milestone_id?: string; description?: string; start_date?: string; due_date?: string }>>(
       `/api/v1/tickets${selectedProject ? `?project_id=${encodeURIComponent(selectedProject)}` : ""}`,
       { orgSlug }
     ),
@@ -99,7 +119,21 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   const projects = projectsRes.data ?? [];
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
   const tickets = ticketsRes.data ?? [];
-  const selectedTicket = tickets.find((t) => t.id === query.ticket_id);
+  
+  // Fetch detailed ticket if selected (to get tasks)
+  let selectedTicket = tickets.find((t) => t.id === query.ticket_id);
+  let ticketTasks: any[] = [];
+  
+  if (query.ticket_id && query.modal === "edit") {
+    const { data: details } = await apiRequest<any>(`/api/v1/tickets/${query.ticket_id}`, { orgSlug });
+    if (details) {
+      selectedTicket = details;
+      ticketTasks = details.tasks || [];
+    }
+  }
+
+  // Fetch milestones for all projects (or current project)
+  const { data: milestones } = await apiRequest<Milestone[]>(`/api/v1/milestones/project/${selectedProject || projects[0]?.id || 'null'}`, { orgSlug });
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -177,6 +211,12 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
                       {getStatusIcon(ticket.status)}
                       {ticket.status.replace("_", " ")}
                     </div>
+                    {ticket.milestone_id && (
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg border border-violet-100">
+                        <Flag className="h-3 w-3" />
+                        Milestone
+                      </div>
+                    )}
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-sm text-muted">
                     <span className="font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg">{projectNameById.get(ticket.project_id) || "General"}</span>
@@ -217,23 +257,43 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
       >
         <form action={createTicket} className="space-y-6">
           <input type="hidden" name="organization_slug" value={orgSlug} />
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-main">Select Project</label>
-            <select name="project_id" required className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-              <option value="">Choose a project...</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
           
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-main">Ticket Type</label>
-            <select name="type" defaultValue="other" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-              <option value="feature">Feature Request</option>
-              <option value="bug">Bug Report</option>
-              <option value="improvement">Improvement</option>
-              <option value="recommendation">Recommendation</option>
-              <option value="other">Other</option>
-            </select>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-main">Select Project</label>
+              <select name="project_id" required className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                <option value="">Choose a project...</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-main">Ticket Type</label>
+              <select name="type" defaultValue="other" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                <option value="feature">Feature Request</option>
+                <option value="bug">Bug Report</option>
+                <option value="improvement">Improvement</option>
+                <option value="recommendation">Recommendation</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-3">
+             <div className="space-y-1.5">
+               <label className="text-sm font-medium text-main">Milestone</label>
+               <select name="milestone_id" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                 <option value="">None</option>
+                 {milestones?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+               </select>
+             </div>
+             <div className="space-y-1.5">
+               <label className="text-sm font-medium text-main">Start Date</label>
+               <input type="date" name="start_date" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+             </div>
+             <div className="space-y-1.5">
+               <label className="text-sm font-medium text-main">Due Date</label>
+               <input type="date" name="due_date" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+             </div>
           </div>
 
           <Input label="Title" name="title" required placeholder="What is this ticket about?" />
@@ -263,6 +323,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
           isOpen={query.modal === "edit"}
           closeHref={closeHref}
           title="Edit Ticket"
+          size="lg"
         >
           <form action={updateTicket} className="space-y-6">
             <input type="hidden" name="organization_slug" value={orgSlug} />
@@ -293,6 +354,24 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
               </div>
             </div>
 
+            <div className="grid gap-6 sm:grid-cols-3">
+               <div className="space-y-1.5">
+                 <label className="text-sm font-medium text-main">Milestone</label>
+                 <select name="milestone_id" defaultValue={selectedTicket.milestone_id || ""} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                   <option value="">None</option>
+                   {milestones?.filter(m => m.project_id === selectedTicket.project_id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                 </select>
+               </div>
+               <div className="space-y-1.5">
+                 <label className="text-sm font-medium text-main">Start Date</label>
+                 <input type="date" name="start_date" defaultValue={selectedTicket.start_date ? selectedTicket.start_date.split('T')[0] : ""} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+               </div>
+               <div className="space-y-1.5">
+                 <label className="text-sm font-medium text-main">Due Date</label>
+                 <input type="date" name="due_date" defaultValue={selectedTicket.due_date ? selectedTicket.due_date.split('T')[0] : ""} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+               </div>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-main">Description</label>
               <textarea 
@@ -311,7 +390,38 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
             </div>
           </form>
 
-          <div className="mt-8">
+          <div className="mt-8 space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-main">Linked Tasks</h4>
+                <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create&ticket_id=${selectedTicket.id}`}>
+                  <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600">
+                    <Plus className="h-3 w-3" /> Add Task
+                  </Button>
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {ticketTasks.length > 0 ? (
+                  ticketTasks.map((task: any) => (
+                    <div key={task.id} className="flex items-center justify-between rounded-xl border border-soft p-3 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle2 className={cn("h-4 w-4", task.status === 'closed' ? "text-emerald-500" : "text-slate-300")} />
+                        <span className="text-sm font-medium text-main">{task.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <Badge variant="outline" className="text-[10px] uppercase">{task.status}</Badge>
+                         <Link href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`}>
+                           <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
+                         </Link>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted italic">No tasks linked to this ticket yet.</p>
+                )}
+              </div>
+            </div>
+
             <TicketComments ticketId={selectedTicket.id} orgSlug={orgSlug} currentUserId={user?.id} />
           </div>
         </Modal>

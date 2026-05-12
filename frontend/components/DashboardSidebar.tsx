@@ -11,7 +11,9 @@ import {
   LogOut,
   Menu,
   X,
-  ListChecks
+  ListChecks,
+  Map,
+  Calendar
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -32,6 +34,8 @@ type DashboardSidebarProps = {
 const MAIN_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/roadmap", label: "Roadmap", icon: Map, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },

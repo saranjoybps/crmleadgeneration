@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Plus, Edit, Trash2, Users, Calendar, ArrowRight, Info, CheckSquare, Ticket, Filter, X } from "lucide-react";
+import { Plus, Edit, Trash2, Users, Calendar, ArrowRight, Info, CheckSquare, Ticket, Filter, X, Link2, Unlink } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
@@ -32,11 +32,13 @@ type TaskRow = {
   description?: string; 
   status: string; 
   priority: "low" | "medium" | "high" | "urgent";
+  start_date?: string;
   due_date?: string;
   ticket_id: string; 
   project_id: string;
   parent_task_id?: string;
   subtasks?: Array<{ id: string; title: string; status: string }>;
+  dependencies?: Array<{ id: string; depends_on_task_id: string; dependency_type: string }>;
   created_at: string;
   task_assignees?: Array<{
     user_id: string;
@@ -47,12 +49,6 @@ type TicketRow = { id: string; title: string };
 type ProjectRow = { id: string; name: string };
 
 const KANBAN_STATUSES = ["open", "in_progress", "review", "hold", "closed"] as const;
-
-function resolveJoinedUserEmail(value: unknown): string {
-  if (Array.isArray(value)) return String(value[0]?.email ?? "unknown");
-  if (value && typeof value === "object" && "email" in value) return String((value as { email?: string }).email ?? "unknown");
-  return "unknown";
-}
 
 function resolveJoinedUserName(value: unknown): string {
   if (Array.isArray(value)) return String(value[0]?.full_name || value[0]?.email || "unknown");
@@ -67,6 +63,7 @@ async function createTask(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const priority = String(formData.get("priority") ?? "medium");
+  const startDate = String(formData.get("start_date") ?? "").trim();
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const parentTaskId = String(formData.get("parent_task_id") ?? "").trim();
   const assigneeIds = formData.getAll("assignee_user_ids").map((x) => String(x).trim()).filter(Boolean);
@@ -75,7 +72,16 @@ async function createTask(formData: FormData) {
   const { error } = await apiRequest("/api/v1/tasks/ticket/" + encodeURIComponent(ticketId), {
     method: "POST",
     orgSlug,
-    body: { title, description: description || null, status: "open", priority, due_date: dueDate || null, parent_task_id: parentTaskId || null, assignee_user_ids: assigneeIds },
+    body: { 
+      title, 
+      description: description || null, 
+      status: "open", 
+      priority, 
+      start_date: startDate || null,
+      due_date: dueDate || null, 
+      parent_task_id: parentTaskId || null, 
+      assignee_user_ids: assigneeIds 
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -91,18 +97,62 @@ async function updateTask(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
   const priority = String(formData.get("priority") ?? "medium");
+  const startDate = String(formData.get("start_date") ?? "").trim();
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tasks`;
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
     orgSlug,
-    body: { title: title || undefined, description: description || null, status, priority, due_date: dueDate.trim() ? dueDate.trim() : null },
+    body: { 
+      title: title || undefined, 
+      description: description || null, 
+      status, 
+      priority, 
+      start_date: startDate || null,
+      due_date: dueDate || null 
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Task updated.")}`);
+}
+
+async function addDependency(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "").trim();
+  const type = String(formData.get("dependency_type") ?? "FS").trim();
+  const path = `/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${taskId}`;
+
+  const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/dependencies`, {
+    method: "POST",
+    orgSlug,
+    body: { depends_on_task_id: dependsOnTaskId, dependency_type: type },
+  });
+
+  if (error) redirect(`${path}&error=${encodeURIComponent(error)}`);
+  revalidatePath(`/o/${orgSlug}/dashboard/tasks`);
+  redirect(`${path}&success=${encodeURIComponent("Dependency added.")}`);
+}
+
+async function removeDependency(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${taskId}`;
+
+  const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/dependencies/${encodeURIComponent(dependsOnTaskId)}`, {
+    method: "DELETE",
+    orgSlug,
+  });
+
+  if (error) redirect(`${path}&error=${encodeURIComponent(error)}`);
+  revalidatePath(`/o/${orgSlug}/dashboard/tasks`);
+  redirect(`${path}&success=${encodeURIComponent("Dependency removed.")}`);
 }
 
 async function updateTaskAssignees(formData: FormData) {
@@ -194,7 +244,6 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          {/* Filter Bar */}
           <div className="flex items-center gap-2 rounded-2xl border border-soft bg-white p-1.5 shadow-sm">
             <form method="GET" className="flex items-center gap-2">
               <div className="flex items-center gap-2 px-3 text-xs font-bold text-main border-r border-soft">
@@ -278,7 +327,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
           <input type="hidden" name="organization_slug" value={orgSlug} />
           <input type="hidden" name="parent_task_id" value={selectedParentId} />
           
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-3">
             <div className="space-y-1.5">
               <label className="text-sm font-bold uppercase tracking-wider text-muted">Priority</label>
               <select name="priority" defaultValue="medium" className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
@@ -287,6 +336,10 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 <option value="high">High</option>
                 <option value="urgent">Urgent</option>
               </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted">Start Date</label>
+              <input type="date" name="start_date" className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-bold uppercase tracking-wider text-muted">Due Date</label>
@@ -320,7 +373,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
               {users.map((row) => (
                 <label key={row.user_id} className="flex items-center gap-3 rounded-xl border border-soft p-3 cursor-pointer transition-colors hover:bg-slate-50 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50">
                   <input type="checkbox" name="assignee_user_ids" value={row.user_id} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
-                  <span className="text-xs font-medium">{resolveJoinedUserEmail(row.users)}</span>
+                  <span className="text-xs font-medium">{resolveJoinedUserName(row.users)}</span>
                 </label>
               ))}
             </div>
@@ -351,7 +404,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 
                 <Input label="Title" name="title" defaultValue={selectedTask.title} required />
                 
-                <div className="grid gap-6 sm:grid-cols-3">
+                <div className="grid gap-6 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label className="text-sm font-bold uppercase tracking-wider text-muted">Status</label>
                     <select 
@@ -370,6 +423,13 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                       <option value="high">High</option>
                       <option value="urgent">Urgent</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold uppercase tracking-wider text-muted">Start Date</label>
+                    <input type="date" name="start_date" defaultValue={selectedTask.start_date ? selectedTask.start_date.split('T')[0] : ""} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-bold uppercase tracking-wider text-muted">Due Date</label>
@@ -391,6 +451,62 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                   <Button type="submit">Save Changes</Button>
                 </div>
               </form>
+
+              {/* Dependency Editor */}
+              <div className="space-y-4 pt-6 border-t border-soft">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-main">Dependencies</h4>
+                </div>
+                
+                <div className="space-y-2">
+                  {(selectedTask.dependencies || []).map(dep => {
+                    const dependsOnTask = tasks.find(t => t.id === dep.depends_on_task_id);
+                    return (
+                      <div key={dep.id} className="flex items-center justify-between rounded-xl border border-soft p-3 bg-slate-50/50">
+                        <div className="flex items-center gap-2">
+                          <Link2 className="h-3.5 w-3.5 text-violet-500" />
+                          <span className="text-xs font-medium">{dependsOnTask?.title || "Unknown Task"}</span>
+                          <Badge variant="outline" className="text-[9px] uppercase">{dep.dependency_type}</Badge>
+                        </div>
+                        <form action={removeDependency}>
+                          <input type="hidden" name="organization_slug" value={orgSlug} />
+                          <input type="hidden" name="task_id" value={selectedTask.id} />
+                          <input type="hidden" name="depends_on_task_id" value={dep.depends_on_task_id} />
+                          <button type="submit" className="text-muted hover:text-red-500 transition-colors">
+                            <Unlink className="h-4 w-4" />
+                          </button>
+                        </form>
+                      </div>
+                    );
+                  })}
+                  
+                  {canManage && (
+                    <form action={addDependency} className="flex gap-2 items-end pt-2">
+                      <input type="hidden" name="organization_slug" value={orgSlug} />
+                      <input type="hidden" name="task_id" value={selectedTask.id} />
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Add Predecessor</label>
+                        <select name="depends_on_task_id" required className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs focus:ring-2 focus:ring-violet-500">
+                          <option value="">Select task...</option>
+                          {tasks.filter(t => t.id !== selectedTask.id && t.project_id === selectedTask.project_id).map(t => (
+                            <option key={t.id} value={t.id}>{t.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="w-20 space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Type</label>
+                        <select name="dependency_type" className="h-10 w-full rounded-xl border border-slate-300 bg-white px-2 text-xs focus:ring-2 focus:ring-violet-500">
+                          <option value="FS">FS</option>
+                          <option value="SS">SS</option>
+                          <option value="FF">FF</option>
+                          <option value="SF">SF</option>
+                        </select>
+                      </div>
+                      <Button type="submit" variant="outline" className="h-10 px-3"><Plus className="h-4 w-4" /></Button>
+                    </form>
+                  )}
+                </div>
+              </div>
 
               <div className="space-y-4 pt-6 border-t border-soft">
                 <div className="flex items-center justify-between">
@@ -453,7 +569,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                     </div>
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3.5 w-3.5 text-violet-400" />
-                      <p className="text-[11px] font-medium text-main">Created May 11, 2026</p>
+                      <p className="text-[11px] font-medium text-main">Created {new Date(selectedTask.created_at).toLocaleDateString()}</p>
                     </div>
                   </div>
                 </div>

@@ -22,10 +22,10 @@ class TicketService:
         return {x["project_id"] for x in (rows.data or [])}
 
     @classmethod
-    def list_tickets(cls, supabase: Client, ctx: RequestContext, project_id: str | None = None, status: str | None = None):
+    def list_tickets(cls, supabase: Client, ctx: RequestContext, project_id: str | None = None, status: str | None = None, milestone_id: str | None = None):
         query = (
             supabase.table("tickets")
-            .select("id,tenant_id,project_id,title,description,type,status,priority,due_date,created_by,created_at,updated_at")
+            .select("id,tenant_id,project_id,milestone_id,title,description,type,status,priority,start_date,due_date,created_by,created_at,updated_at")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
@@ -34,6 +34,8 @@ class TicketService:
             query = query.eq("project_id", project_id)
         if status:
             query = query.eq("status", status)
+        if milestone_id:
+            query = query.eq("milestone_id", milestone_id)
         
         rows = query.execute().data or []
         if allowed_project_ids is not None:
@@ -66,21 +68,22 @@ class TicketService:
             raise HTTPException(status_code=403, detail="Forbidden for this project")
         
         try:
+            insert_data = {
+                "tenant_id": ctx.tenant_id,
+                "project_id": payload.project_id,
+                "milestone_id": getattr(payload, "milestone_id", None),
+                "title": payload.title,
+                "description": payload.description,
+                "type": payload.type,
+                "priority": getattr(payload, "priority", "medium"),
+                "start_date": getattr(payload, "start_date", None),
+                "due_date": getattr(payload, "due_date", None),
+                "status": payload.status or "open",
+                "created_by": ctx.app_user_id,
+            }
             created = (
                 supabase.table("tickets")
-                .insert(
-                    {
-                        "tenant_id": ctx.tenant_id,
-                        "project_id": payload.project_id,
-                        "title": payload.title,
-                        "description": payload.description,
-                        "type": payload.type,
-                        "priority": getattr(payload, "priority", "medium"),
-                        "due_date": getattr(payload, "due_date", None),
-                        "status": payload.status or "open",
-                        "created_by": ctx.app_user_id,
-                    }
-                )
+                .insert(insert_data)
                 .execute()
             )
         except APIError as exc:
@@ -113,8 +116,18 @@ class TicketService:
             
             if hasattr(payload, "priority") and payload.priority:
                 update_data["priority"] = payload.priority
-            if hasattr(payload, "due_date"):
-                update_data["due_date"] = payload.due_date
+            
+            due_date_val = getattr(payload, "due_date", "missing_attr")
+            if due_date_val != "missing_attr":
+                update_data["due_date"] = due_date_val
+
+            start_date_val = getattr(payload, "start_date", "missing_attr")
+            if start_date_val != "missing_attr":
+                update_data["start_date"] = start_date_val
+
+            milestone_id_val = getattr(payload, "milestone_id", "missing_attr")
+            if milestone_id_val != "missing_attr":
+                update_data["milestone_id"] = milestone_id_val
 
             updated = (
                 supabase.table("tickets")
