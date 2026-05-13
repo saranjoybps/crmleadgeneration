@@ -34,9 +34,21 @@ export default async function CalendarPage({ params, searchParams }: {
   const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
 
   const getItemsForDay = (day: number) => {
-    const dateStr = new Date(currentYear, currentMonth, day).toDateString();
-    const dayTasks = tasks?.filter(t => t.due_date && new Date(t.due_date).toDateString() === dateStr) || [];
-    const dayTickets = tickets?.filter(t => t.due_date && new Date(t.due_date).toDateString() === dateStr) || [];
+    // Create a local date string YYYY-MM-DD for comparison
+    const targetDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    
+    const dayTasks = tasks?.filter(t => {
+      if (!t.due_date) return false;
+      const dueDateStr = t.due_date.split('T')[0];
+      return dueDateStr === targetDate;
+    }) || [];
+
+    const dayTickets = tickets?.filter(t => {
+      if (!t.due_date) return false;
+      const dueDateStr = t.due_date.split('T')[0];
+      return dueDateStr === targetDate;
+    }) || [];
+
     return { tasks: dayTasks, tickets: dayTickets };
   };
 

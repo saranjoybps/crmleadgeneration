@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { TicketComments } from "@/components/TicketComments";
+import { ProjectMilestoneSelector } from "@/components/ProjectMilestoneSelector";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
@@ -133,7 +134,10 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   }
 
   // Fetch milestones for all projects (or current project)
-  const { data: milestones } = await apiRequest<Milestone[]>(`/api/v1/milestones/project/${selectedProject || projects[0]?.id || 'null'}`, { orgSlug });
+  const milestonesUrl = selectedProject 
+    ? `/api/v1/milestones?project_id=${selectedProject}` 
+    : (projects[0]?.id ? `/api/v1/milestones?project_id=${projects[0].id}` : "/api/v1/milestones");
+  const { data: milestones } = await apiRequest<Milestone[]>(milestonesUrl, { orgSlug });
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -259,12 +263,13 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
           <input type="hidden" name="organization_slug" value={orgSlug} />
           
           <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-main">Select Project</label>
-              <select name="project_id" required className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-                <option value="">Choose a project...</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+            <div className="space-y-1.5 sm:col-span-2">
+              <ProjectMilestoneSelector 
+                projects={projects} 
+                milestones={milestones} 
+                orgSlug={orgSlug}
+                defaultProjectId={selectedProject}
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-main">Ticket Type</label>
@@ -276,24 +281,14 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
                 <option value="other">Other</option>
               </select>
             </div>
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-3">
-             <div className="space-y-1.5">
-               <label className="text-sm font-medium text-main">Milestone</label>
-               <select name="milestone_id" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-                 <option value="">None</option>
-                 {milestones?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-               </select>
-             </div>
-             <div className="space-y-1.5">
+            <div className="space-y-1.5">
                <label className="text-sm font-medium text-main">Start Date</label>
                <input type="date" name="start_date" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
-             </div>
-             <div className="space-y-1.5">
+            </div>
+            <div className="space-y-1.5">
                <label className="text-sm font-medium text-main">Due Date</label>
                <input type="date" name="due_date" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
-             </div>
+            </div>
           </div>
 
           <Input label="Title" name="title" required placeholder="What is this ticket about?" />
@@ -332,6 +327,15 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
             <Input label="Title" name="title" defaultValue={selectedTicket.title} required />
             
             <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <ProjectMilestoneSelector 
+                  projects={projects} 
+                  milestones={milestones} 
+                  orgSlug={orgSlug}
+                  defaultProjectId={selectedTicket.project_id}
+                  defaultMilestoneId={selectedTicket.milestone_id || ""}
+                />
+              </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-main">Type</label>
                 <select name="type" defaultValue={selectedTicket.type} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
@@ -352,17 +356,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
                   <option value="closed">Closed</option>
                 </select>
               </div>
-            </div>
-
-            <div className="grid gap-6 sm:grid-cols-3">
-               <div className="space-y-1.5">
-                 <label className="text-sm font-medium text-main">Milestone</label>
-                 <select name="milestone_id" defaultValue={selectedTicket.milestone_id || ""} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-                   <option value="">None</option>
-                   {milestones?.filter(m => m.project_id === selectedTicket.project_id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                 </select>
-               </div>
-               <div className="space-y-1.5">
+              <div className="space-y-1.5">
                  <label className="text-sm font-medium text-main">Start Date</label>
                  <input type="date" name="start_date" defaultValue={selectedTicket.start_date ? selectedTicket.start_date.split('T')[0] : ""} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
                </div>

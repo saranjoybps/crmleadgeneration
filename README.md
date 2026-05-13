@@ -66,3 +66,7 @@ ALLOWED_ORIGINS=http://localhost:3000
 
 - Schema is intentionally minimal and breaking-clean for tenant/auth core.
 - Legacy project/ticket/task/report/hr/client-portal modules are removed from the app surface.
+
+
+Remove-Item -Recurse -Force "$HOME\.gemini"
+

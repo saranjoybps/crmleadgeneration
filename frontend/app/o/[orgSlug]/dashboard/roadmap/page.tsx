@@ -33,13 +33,50 @@ async function createMilestone(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Milestone created.")}`);
 }
 
+async function updateMilestone(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const milestoneId = String(formData.get("milestone_id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const dueDate = String(formData.get("due_date") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/roadmap`;
+
+  const { error } = await apiRequest(`/api/v1/milestones/${encodeURIComponent(milestoneId)}`, {
+    method: "PATCH",
+    orgSlug,
+    body: { name, description: description || null, due_date: dueDate, status },
+  });
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("Milestone updated.")}`);
+}
+
+async function deleteMilestone(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const milestoneId = String(formData.get("milestone_id") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/roadmap`;
+
+  const { error } = await apiRequest(`/api/v1/milestones/${encodeURIComponent(milestoneId)}`, {
+    method: "DELETE",
+    orgSlug,
+  });
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("Milestone deleted.")}`);
+}
+
 export default async function RoadmapPage({ params, searchParams }: { 
   params: Promise<{ orgSlug: string }>,
-  searchParams: Promise<{ project_id?: string; modal?: string; error?: string; success?: string }>
+  searchParams: Promise<{ project_id?: string; modal?: string; error?: string; success?: string; milestone_id?: string }>
 }) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  const { project_id, modal } = query;
+  const { project_id, modal, milestone_id } = query;
   const org = await getOrganizationContextOrRedirect(orgSlug);
 
   // Fetch projects for the filter
@@ -51,6 +88,12 @@ export default async function RoadmapPage({ params, searchParams }: {
     : "/api/v1/tasks";
   const { data: tasks } = await apiRequest<Task[]>(tasksUrl, { orgSlug });
 
+  // Fetch tickets for Gantt mapping
+  const ticketsUrl = project_id
+    ? `/api/v1/tickets?project_id=${project_id}`
+    : "/api/v1/tickets";
+  const { data: tickets } = await apiRequest<any[]>(ticketsUrl, { orgSlug });
+
   // Fetch milestones
   const milestonesUrl = project_id
     ? `/api/v1/milestones?project_id=${project_id}`
@@ -58,7 +101,10 @@ export default async function RoadmapPage({ params, searchParams }: {
   const { data: milestones } = await apiRequest<any[]>(milestonesUrl, { orgSlug });
 
   const activeProject = projects?.find(p => p.id === project_id);
+  const selectedMilestone = milestones?.find(m => m.id === milestone_id);
+  const selectedMilestoneProject = projects?.find(p => p.id === selectedMilestone?.project_id);
   const closeHref = `/o/${orgSlug}/dashboard/roadmap${project_id ? `?project_id=${project_id}` : ""}`;
+  const closeHrefWithParams = (params: string) => `${closeHref}${closeHref.includes('?') ? '&' : '?'}${params}`;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -72,7 +118,7 @@ export default async function RoadmapPage({ params, searchParams }: {
           <p className="mt-1 text-muted font-medium">Visualize your project milestones and task dependencies.</p>
         </div>
         {(org.role === "owner" || org.role === "admin") && (
-          <Link href={`${closeHref}${closeHref.includes('?') ? '&' : '?'}modal=create_milestone`}>
+          <Link href={closeHrefWithParams("modal=create_milestone")}>
             <Button className="gap-2">
               <Plus className="h-5 w-5" />
               New Milestone
@@ -129,7 +175,7 @@ export default async function RoadmapPage({ params, searchParams }: {
             </div>
           </div>
           <div className="p-6">
-            <GanttChart tasks={tasks || []} milestones={milestones || []} />
+            <GanttChart tasks={tasks || []} milestones={milestones || []} tickets={tickets || []} />
           </div>
         </Card>
       </div>
@@ -142,18 +188,28 @@ export default async function RoadmapPage({ params, searchParams }: {
               milestones.map(m => (
                 <div key={m.id} className="group relative p-4 rounded-2xl bg-white border border-soft hover:border-violet-200 hover:shadow-md transition-all">
                   <div className="flex items-start justify-between">
-                    <div className="flex gap-3">
+                    <Link href={closeHrefWithParams(`modal=view_milestone&milestone_id=${m.id}`)} className="flex gap-3 min-w-0">
                       <div className="h-9 w-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
                         <Flag className="h-4 w-4" />
                       </div>
-                      <div>
-                        <p className="text-sm font-bold text-main leading-none mb-1">{m.name}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-main leading-none mb-1 truncate">{m.name}</p>
                         <p className="text-[10px] font-bold text-muted uppercase">{new Date(m.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       </div>
+                    </Link>
+                    <div className="flex flex-col items-end gap-2">
+                      <Badge className={m.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
+                        {m.status}
+                      </Badge>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${m.id}`)}>
+                           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
+                         </Link>
+                         <Link href={closeHrefWithParams(`modal=delete_milestone&milestone_id=${m.id}`)}>
+                           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></Button>
+                         </Link>
+                      </div>
                     </div>
-                    <Badge className={m.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
-                      {m.status}
-                    </Badge>
                   </div>
                 </div>
               ))
@@ -236,6 +292,149 @@ export default async function RoadmapPage({ params, searchParams }: {
           </div>
         </form>
       </Modal>
+
+      {/* VIEW MILESTONE MODAL */}
+      {selectedMilestone && (
+        <Modal
+          isOpen={modal === "view_milestone"}
+          closeHref={closeHref}
+          title={selectedMilestone.name}
+        >
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-soft">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Project</p>
+                <p className="text-sm font-bold text-main">{selectedMilestoneProject?.name || "Unknown Project"}</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-soft">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Status</p>
+                <Badge className={selectedMilestone.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
+                  {selectedMilestone.status}
+                </Badge>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-soft">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Target Date</p>
+                <p className="text-sm font-bold text-main">{new Date(selectedMilestone.due_date).toLocaleDateString()}</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-soft">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Linked Tickets</p>
+                <p className="text-sm font-bold text-main">{tickets?.filter(t => t.milestone_id === selectedMilestone.id).length || 0}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Description</p>
+              <p className="text-sm text-main leading-relaxed">
+                {selectedMilestone.description || "No description provided for this milestone."}
+              </p>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-soft">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Tickets in this Milestone</p>
+              <div className="space-y-2">
+                {tickets?.filter(t => t.milestone_id === selectedMilestone.id).map(t => (
+                  <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border border-soft bg-white">
+                    <span className="text-xs font-bold text-main">{t.title}</span>
+                    <Badge variant="outline" className="text-[10px]">{t.status}</Badge>
+                  </div>
+                ))}
+                {tickets?.filter(t => t.milestone_id === selectedMilestone.id).length === 0 && (
+                  <p className="text-xs text-muted italic text-center py-2">No tickets linked yet.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+               <Link href={closeHref}>
+                 <Button variant="outline">Close</Button>
+               </Link>
+               {(org.role === "owner" || org.role === "admin") && (
+                 <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${selectedMilestone.id}`)}>
+                   <Button>Edit Milestone</Button>
+                 </Link>
+               )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* EDIT MILESTONE MODAL */}
+      {selectedMilestone && (
+        <Modal
+          isOpen={modal === "edit_milestone"}
+          closeHref={closeHref}
+          title={`Edit ${selectedMilestone.name}`}
+        >
+          <form action={updateMilestone} className="space-y-6">
+            <input type="hidden" name="organization_slug" value={orgSlug} />
+            <input type="hidden" name="milestone_id" value={selectedMilestone.id} />
+            
+            <Input label="Milestone Name" name="name" defaultValue={selectedMilestone.name} required />
+            
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-main">Status</label>
+              <select name="status" defaultValue={selectedMilestone.status} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-main">Description</label>
+              <textarea 
+                name="description" 
+                defaultValue={selectedMilestone.description ?? ""}
+                rows={3} 
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" 
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-main">Target Date</label>
+              <input type="date" name="due_date" defaultValue={selectedMilestone.due_date ? selectedMilestone.due_date.split('T')[0] : ""} required className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Link href={closeHref}>
+                <Button variant="outline" type="button">Cancel</Button>
+              </Link>
+              <Button type="submit">Save Changes</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* DELETE MILESTONE MODAL */}
+      {selectedMilestone && (
+        <Modal
+          isOpen={modal === "delete_milestone"}
+          closeHref={closeHref}
+          title="Delete Milestone"
+          size="sm"
+        >
+          <div className="space-y-6 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <Trash2 className="h-8 w-8" />
+            </div>
+            <div>
+              <h4 className="text-xl font-bold text-main">Are you sure?</h4>
+              <p className="mt-2 text-sm text-muted">
+                You are about to delete <span className="font-bold text-main">{selectedMilestone.name}</span>. This action cannot be undone.
+              </p>
+            </div>
+            <form action={deleteMilestone} className="flex gap-3">
+              <input type="hidden" name="organization_slug" value={orgSlug} />
+              <input type="hidden" name="milestone_id" value={selectedMilestone.id} />
+              <Link href={closeHref} className="flex-1">
+                <Button variant="outline" className="w-full">Cancel</Button>
+              </Link>
+              <Button variant="danger" type="submit" className="flex-1 bg-red-600 text-white hover:bg-red-700">Delete</Button>
+            </form>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
