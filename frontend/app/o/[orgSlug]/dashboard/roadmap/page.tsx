@@ -79,6 +79,35 @@ export default async function RoadmapPage({ params, searchParams }: {
   const { project_id, modal, milestone_id } = query;
   const org = await getOrganizationContextOrRedirect(orgSlug);
 
+  const permissionsResponse = await apiRequest<{
+    role: { key: string; label: string };
+    modules: Array<{
+      key: string;
+      label: string;
+      permissions: {
+        can_view: boolean;
+        can_create: boolean;
+        can_edit: boolean;
+        can_delete: boolean;
+      };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+
+  const milestonePermissions = permissionsResponse.data?.modules?.find((module) => module.key === "milestones")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+
+  if (!milestonePermissions.can_view) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+        You are not authorized to view roadmap milestones for this workspace.
+      </div>
+    );
+  }
+
   // Fetch projects for the filter
   const { data: projects } = await apiRequest<any[]>("/api/v1/projects", { orgSlug });
   
@@ -117,8 +146,8 @@ export default async function RoadmapPage({ params, searchParams }: {
           <h1 className="text-3xl font-black tracking-tight text-main">Project Timeline</h1>
           <p className="mt-1 text-muted font-medium">Visualize your project milestones and task dependencies.</p>
         </div>
-        {(org.role === "owner" || org.role === "admin") && (
-          <Link href={closeHrefWithParams("modal=create_milestone")}>
+        {milestonePermissions.can_create && (
+          <Link href={closeHrefWithParams("modal=create_milestone")}> 
             <Button className="gap-2">
               <Plus className="h-5 w-5" />
               New Milestone
@@ -202,12 +231,16 @@ export default async function RoadmapPage({ params, searchParams }: {
                         {m.status}
                       </Badge>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${m.id}`)}>
-                           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
-                         </Link>
-                         <Link href={closeHrefWithParams(`modal=delete_milestone&milestone_id=${m.id}`)}>
-                           <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></Button>
-                         </Link>
+                        {milestonePermissions.can_edit && (
+                          <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${m.id}`)}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
+                          </Link>
+                        )}
+                        {milestonePermissions.can_delete && (
+                          <Link href={closeHrefWithParams(`modal=delete_milestone&milestone_id=${m.id}`)}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </Link>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -252,7 +285,7 @@ export default async function RoadmapPage({ params, searchParams }: {
 
       {/* CREATE MILESTONE MODAL */}
       <Modal
-        isOpen={modal === "create_milestone"}
+        isOpen={modal === "create_milestone" && milestonePermissions.can_create}
         closeHref={closeHref}
         title="Create New Milestone"
       >
@@ -348,7 +381,7 @@ export default async function RoadmapPage({ params, searchParams }: {
                <Link href={closeHref}>
                  <Button variant="outline">Close</Button>
                </Link>
-               {(org.role === "owner" || org.role === "admin") && (
+               {milestonePermissions.can_edit && (
                  <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${selectedMilestone.id}`)}>
                    <Button>Edit Milestone</Button>
                  </Link>
@@ -359,7 +392,7 @@ export default async function RoadmapPage({ params, searchParams }: {
       )}
 
       {/* EDIT MILESTONE MODAL */}
-      {selectedMilestone && (
+      {selectedMilestone && milestonePermissions.can_edit && (
         <Modal
           isOpen={modal === "edit_milestone"}
           closeHref={closeHref}
@@ -407,7 +440,7 @@ export default async function RoadmapPage({ params, searchParams }: {
       )}
 
       {/* DELETE MILESTONE MODAL */}
-      {selectedMilestone && (
+      {selectedMilestone && milestonePermissions.can_delete && (
         <Modal
           isOpen={modal === "delete_milestone"}
           closeHref={closeHref}

@@ -18,7 +18,17 @@ export default async function DashboardPage({ params }: { params: Promise<{ orgS
   const { orgSlug } = await params;
   const org = await getOrganizationContextOrRedirect(orgSlug);
 
-  const { data: summary } = await apiRequest<DashboardSummary>("/api/v1/dashboard/summary", { orgSlug });
+  const summaryResponse = await apiRequest<DashboardSummary>("/api/v1/dashboard/summary", { orgSlug });
+
+  if (summaryResponse.error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+        Dashboard access denied: {summaryResponse.error}
+      </div>
+    );
+  }
+
+  const summary = summaryResponse.data;
 
   const stats = [
     { label: "Active Projects", value: summary?.active_projects ?? 0, icon: Briefcase, color: "text-blue-600", bg: "bg-blue-50", href: `/o/${orgSlug}/dashboard/projects` },

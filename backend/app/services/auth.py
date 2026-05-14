@@ -8,7 +8,7 @@ from app.schemas.common import InviteCreate, RoleAssignment
 class AuthService:
     @staticmethod
     def invite_user(supabase: Client, payload: InviteCreate, ctx: RequestContext):
-        role_resp = supabase.table("roles").select("id").eq("key", payload.role_key).maybe_single().execute()
+        role_resp = supabase.table("roles").select("id").eq("key", payload.role_key).eq("tenant_id", ctx.tenant_id).maybe_single().execute()
         role = role_resp.data
         if not role:
             raise HTTPException(status_code=400, detail="Invalid role")
@@ -25,7 +25,7 @@ class AuthService:
 
     @staticmethod
     def assign_role(supabase: Client, payload: RoleAssignment, ctx: RequestContext):
-        role_resp = supabase.table("roles").select("id").eq("key", payload.role_key).maybe_single().execute()
+        role_resp = supabase.table("roles").select("id").eq("key", payload.role_key).eq("tenant_id", ctx.tenant_id).maybe_single().execute()
         role = role_resp.data
         if not role:
             raise HTTPException(status_code=400, detail="Invalid role")

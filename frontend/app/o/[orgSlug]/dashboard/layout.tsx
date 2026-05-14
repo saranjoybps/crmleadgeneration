@@ -23,7 +23,6 @@ export default async function DashboardLayout({ children, params }: DashboardLay
 
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const profileInitial = (user.email?.trim().charAt(0) || "U").toUpperCase();
-
   // Fetch avatar from users table as requested
   const { data: dbUser } = await supabase
     .from("users")

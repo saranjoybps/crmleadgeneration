@@ -201,7 +201,37 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   const { orgSlug } = await params;
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
-  const canManage = org.role === "owner" || org.role === "admin";
+
+  const permissionsResponse = await apiRequest<{
+    role: { key: string; label: string };
+    modules: Array<{
+      key: string;
+      label: string;
+      permissions: {
+        can_view: boolean;
+        can_create: boolean;
+        can_edit: boolean;
+        can_delete: boolean;
+      };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+
+  const tasksPermissions = permissionsResponse.data?.modules?.find((module) => module.key === "tasks")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+
+  if (!tasksPermissions.can_view) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+        You are not authorized to view tasks for this workspace.
+      </div>
+    );
+  }
+
+  const canManage = tasksPermissions.can_create || tasksPermissions.can_edit || tasksPermissions.can_delete;
 
   const taskQueryParams = new URLSearchParams();
   if (query.project_id) taskQueryParams.append("project_id", query.project_id);
@@ -283,7 +313,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
             </form>
           </div>
 
-          {canManage && (
+          {tasksPermissions.can_create && (
             <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create`}>
               <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
                 <Plus className="h-5 w-5" />
@@ -311,7 +341,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
       <KanbanBoard 
         initialTasks={tasks} 
         orgSlug={orgSlug} 
-        canManage={canManage || org.role === "member"} 
+        canManage={canManage} 
         ticketTitleById={ticketTitleById}
         onStatusChange={onStatusChange}
       />
