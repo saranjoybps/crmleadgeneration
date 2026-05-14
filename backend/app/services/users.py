@@ -69,15 +69,24 @@ class UserService:
             raise HTTPException(status_code=409, detail="User already exists in users table")
 
         try:
-            role = supabase.table("roles").select("id,key").eq("key", payload.role_key).maybe_single().execute()
+            role_rows = (
+                supabase.table("roles")
+                .select("id, tenant_id, key")
+                .eq("key", payload.role_key)
+                .execute()
+                .data
+                or []
+            )
         except APIError as exc:
             logger.exception("[USER_CREATE][SERVICE][%s] roles lookup failed", dbg)
             raise HTTPException(status_code=500, detail=f"Role lookup failed: {exc.message}") from exc
-        
-        if not role or not role.data:
+
+        if not role_rows:
             raise HTTPException(status_code=400, detail="Invalid role_key")
-        
-        role_data = role.data
+
+        role_data = next((row for row in role_rows if str(row.get("tenant_id") or "") == ctx.tenant_id), None)
+        if role_data is None:
+            role_data = next((row for row in role_rows if row.get("tenant_id") is None), None) or role_rows[0]
 
         try:
             logger.info("[USER_CREATE][SERVICE][%s] creating auth user via admin API", dbg)
