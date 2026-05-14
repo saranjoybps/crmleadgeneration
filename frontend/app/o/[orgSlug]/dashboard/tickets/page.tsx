@@ -33,6 +33,19 @@ async function createTicket(formData: FormData) {
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tickets`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_create: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const ticketsPermissions = permissionsResponse.data?.modules.find(m => m.key === "tickets")?.permissions;
+  if (!ticketsPermissions?.can_create) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create tickets.")}`);
+  }
+
   const { error } = await apiRequest("/api/v1/tickets", {
     method: "POST",
     orgSlug,
@@ -66,6 +79,19 @@ async function updateTicket(formData: FormData) {
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tickets`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_edit: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const ticketsPermissions = permissionsResponse.data?.modules.find(m => m.key === "tickets")?.permissions;
+  if (!ticketsPermissions?.can_edit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit tickets.")}`);
+  }
+
   const { error } = await apiRequest(`/api/v1/tickets/${encodeURIComponent(ticketId)}`, {
     method: "PATCH",
     orgSlug,
@@ -91,6 +117,19 @@ async function deleteTicket(formData: FormData) {
   const ticketId = String(formData.get("ticket_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tickets`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const ticketsPermissions = permissionsResponse.data?.modules.find(m => m.key === "tickets")?.permissions;
+  if (!ticketsPermissions?.can_delete) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete tickets.")}`);
+  }
+
   const { error } = await apiRequest(`/api/v1/tickets/${encodeURIComponent(ticketId)}`, {
     method: "DELETE",
     orgSlug,
@@ -106,6 +145,16 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const selectedProject = query.project_id ?? "";
+
+  // Fetch permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const ticketsPermissions = permissionsResponse.data?.modules.find(m => m.key === "tickets")?.permissions || { can_view: false, can_create: false, can_edit: false, can_delete: false };
 
   const [projectsRes, ticketsRes] = await Promise.all([
     apiRequest<Array<{ id: string; name: string }>>("/api/v1/projects", { orgSlug }),
@@ -169,12 +218,14 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
           <h1 className="text-3xl font-bold tracking-tight text-main">Tickets</h1>
           <p className="text-muted">Track issues, feature requests, and support tickets.</p>
         </div>
-        <Link href={`/o/${orgSlug}/dashboard/tickets?modal=create`}>
-          <Button size="lg" className="gap-2">
-            <Plus className="h-5 w-5" />
-            Create Ticket
-          </Button>
-        </Link>
+        {ticketsPermissions.can_create && (
+          <Link href={`/o/${orgSlug}/dashboard/tickets?modal=create`}>
+            <Button size="lg" className="gap-2">
+              <Plus className="h-5 w-5" />
+              Create Ticket
+            </Button>
+          </Link>
+        )}
       </header>
 
       {query.error && (
@@ -231,7 +282,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
               </div>
 
               <div className="mt-4 sm:mt-0 flex items-center gap-2 self-end sm:self-center">
-                {(org.role === "owner" || org.role === "admin") && (
+                {ticketsPermissions.can_view && (
                   <Link href={`/o/${orgSlug}/dashboard/tasks?ticket_id=${ticket.id}`}>
                     <Button variant="secondary" size="sm" className="gap-2 h-9">
                       <Split className="h-4 w-4" />
@@ -239,10 +290,12 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
                     </Button>
                   </Link>
                 )}
-                <Link href={`/o/${orgSlug}/dashboard/tickets?modal=edit&ticket_id=${ticket.id}`}>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl"><Edit className="h-4 w-4 text-muted" /></Button>
-                </Link>
-                {(org.role === "owner" || org.role === "admin") && (
+                {ticketsPermissions.can_edit && (
+                  <Link href={`/o/${orgSlug}/dashboard/tickets?modal=edit&ticket_id=${ticket.id}`}>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl"><Edit className="h-4 w-4 text-muted" /></Button>
+                  </Link>
+                )}
+                {ticketsPermissions.can_delete && (
                   <Link href={`/o/${orgSlug}/dashboard/tickets?modal=delete&ticket_id=${ticket.id}`}>
                     <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
                   </Link>

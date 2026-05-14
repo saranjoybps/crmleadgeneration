@@ -29,28 +29,35 @@ type DashboardSidebarProps = {
   organizationName?: string;
   role: AppRole;
   avatarUrl?: string;
+  allowedModuleKeys?: Set<string>;
 };
 
 const MAIN_LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/roadmap", label: "Roadmap", icon: Map, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/users", label: "Users", icon: Users, roles: ["owner", "admin"] },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard", moduleKey: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/projects", moduleKey: "projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/roadmap", moduleKey: "roadmap", label: "Roadmap", icon: Map, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/calendar", moduleKey: "calendar", label: "Calendar", icon: Calendar, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tickets", moduleKey: "tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/tasks", moduleKey: "tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
+  { href: "/dashboard/todos", moduleKey: "todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
+  { href: "/dashboard/users", moduleKey: "users", label: "Users", icon: Users, roles: ["owner", "admin"] },
+  { href: "/dashboard/settings", moduleKey: "settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
 ] as const;
 
 function isLinkActive(pathname: string, href: string) {
   return href.endsWith("/dashboard") ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function DashboardSidebar({ email, basePath = "", organizationName, role, avatarUrl }: DashboardSidebarProps) {
+export function DashboardSidebar({ email, basePath = "", organizationName, role, avatarUrl, allowedModuleKeys }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
-  const links = MAIN_LINKS.filter((item) => (item.roles as readonly string[]).includes(role));
+  const hasDynamicPermissions = allowedModuleKeys !== undefined;
+  const links = MAIN_LINKS.filter((item) => {
+    if (hasDynamicPermissions) {
+      return item.moduleKey ? allowedModuleKeys.has(item.moduleKey) : true;
+    }
+    return (item.roles as readonly string[]).includes(role);
+  });
 
   useEffect(() => {
     setIsOpen(false);

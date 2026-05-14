@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Plus, Info, Edit, Trash2, UserPlus, X } from "lucide-react";
+import { Plus, Info, Edit, Trash2, UserPlus, X, Briefcase } from "lucide-react";
 
 import { ProjectMembersField } from "@/components/ProjectMembersField";
 import { apiRequest } from "@/lib/api-server";
@@ -41,9 +41,19 @@ async function createProject(formData: FormData) {
   const path = `/o/${orgSlug}/dashboard/projects`;
   const org = await getOrganizationContextOrRedirect(orgSlug);
   
-  if (!(org.role === "owner" || org.role === "admin")) {
-    redirect(`${path}?error=${encodeURIComponent("Only owner/admin can create projects.")}`);
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_create: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions;
+  if (!projectsPermissions?.can_create) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create projects.")}`);
   }
+  
   if (!name) {
     redirect(`${path}?error=${encodeURIComponent("Project name is required.")}`);
   }
@@ -70,6 +80,19 @@ async function updateProject(formData: FormData) {
   const status = String(formData.get("status") ?? "active").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_edit: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions;
+  if (!projectsPermissions?.can_edit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit projects.")}`);
+  }
+
   const { error } = await apiRequest<ProjectRow>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH",
     orgSlug,
@@ -87,6 +110,19 @@ async function deleteProject(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions;
+  if (!projectsPermissions?.can_delete) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete projects.")}`);
+  }
+
   const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "DELETE",
     orgSlug,
@@ -103,6 +139,19 @@ async function addProjectMember(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const userId = String(formData.get("user_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
+
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_edit: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions;
+  if (!projectsPermissions?.can_edit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to manage project members.")}`);
+  }
 
   const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/members`, {
     method: "POST",
@@ -122,6 +171,19 @@ async function removeProjectMember(formData: FormData) {
   const userId = String(formData.get("user_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
 
+  // Check permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_edit: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions;
+  if (!projectsPermissions?.can_edit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to manage project members.")}`);
+  }
+
   const { error } = await apiRequest(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
     method: "DELETE",
     orgSlug,
@@ -137,6 +199,16 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
   const supabase = await createClient();
+
+  // Fetch permissions
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions || { can_view: false, can_create: false, can_edit: false, can_delete: false };
 
   const [projectsRes, usersRes, membersResp] = await Promise.all([
     apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
@@ -179,7 +251,7 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
           <h1 className="text-3xl font-bold tracking-tight text-main">Projects</h1>
           <p className="text-muted">Manage your organization&apos;s projects and team members.</p>
         </div>
-        {(org.role === "owner" || org.role === "admin") && (
+        {projectsPermissions.can_create && (
           <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`}>
             <Button size="lg" className="gap-2">
               <Plus className="h-5 w-5" />
@@ -211,7 +283,7 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
             </div>
             <h3 className="mt-4 text-lg font-semibold text-main">No projects found</h3>
             <p className="mt-1 text-muted">Get started by creating your first project.</p>
-            {(org.role === "owner" || org.role === "admin") && (
+            {projectsPermissions.can_create && (
               <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`} className="mt-6">
                 <Button variant="outline" className="gap-2">
                   <Plus className="h-4 w-4" />
@@ -228,12 +300,16 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
                 <div className="mb-4 flex items-start justify-between">
                   <Badge variant={getStatusVariant(project.status)}>{project.status}</Badge>
                   <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Link href={`/o/${orgSlug}/dashboard/projects?modal=edit&project=${project.id}`}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg"><Edit className="h-4 w-4 text-muted" /></Button>
-                    </Link>
-                    <Link href={`/o/${orgSlug}/dashboard/projects?modal=delete&project=${project.id}`}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
-                    </Link>
+                    {projectsPermissions.can_edit && (
+                      <Link href={`/o/${orgSlug}/dashboard/projects?modal=edit&project=${project.id}`}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg"><Edit className="h-4 w-4 text-muted" /></Button>
+                      </Link>
+                    )}
+                    {projectsPermissions.can_delete && (
+                      <Link href={`/o/${orgSlug}/dashboard/projects?modal=delete&project=${project.id}`}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></Button>
+                      </Link>
+                    )}
                   </div>
                 </div>
                 

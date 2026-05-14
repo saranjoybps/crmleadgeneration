@@ -16,8 +16,7 @@ type UsersPageProps = {
   searchParams: Promise<{ error?: string; success?: string; edit_user_id?: string }>;
 };
 
-const MANAGEABLE_ROLES = ["admin", "member", "client"] as const;
-const MANAGEABLE_ROLE_SET = new Set<string>(MANAGEABLE_ROLES);
+const EXCLUDED_ASSIGNABLE_ROLE_KEYS = new Set(["owner"]);
 
 async function createUserDirect(formData: FormData) {
   "use server";
@@ -27,7 +26,7 @@ async function createUserDirect(formData: FormData) {
   const password = String(formData.get("password") ?? "").trim();
   const fullName = String(formData.get("full_name") ?? "").trim();
   const rawRoleKey = String(formData.get("role") ?? "member").trim().toLowerCase();
-  const roleKey = MANAGEABLE_ROLE_SET.has(rawRoleKey) ? rawRoleKey : "member";
+  const roleKey = rawRoleKey || "member";
   const path = `/o/${orgSlug}/dashboard/users`;
 
   if (!email || !password) redirect(`${path}?error=${encodeURIComponent("Email and password are required.")}`);
@@ -121,14 +120,14 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
       .eq("tenant_id", org.organization_id)
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
-    supabase.from("roles").select("id,key,label").order("created_at", { ascending: true }),
+    supabase.from("roles").select("id,key,label").eq("tenant_id", org.organization_id).order("created_at", { ascending: true }),
   ]);
 
   if (membersError) return <p className="p-6 text-red-600">{membersError.message}</p>;
 
   const memberRows = members ?? [];
   const roles = roleRows ?? [];
-  const selectableRoles = MANAGEABLE_ROLES.filter((key) => roles.some(r => r.key === key));
+  const selectableRoles = roles.filter((role) => !EXCLUDED_ASSIGNABLE_ROLE_KEYS.has(role.key));
   
   const resolveUser = (v: any) => (Array.isArray(v) ? v[0] : v) || {};
   const resolveRole = (v: any) => (Array.isArray(v) ? v[0] : v) || {};
@@ -166,8 +165,18 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
                 <Input label="Temporary Password" name="password" type="password" required />
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-main">System Role</label>
-                  <select name="role" defaultValue="member" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-                    {selectableRoles.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
+                  <select
+                    name="role"
+                    defaultValue={selectableRoles[0]?.key ?? "member"}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500"
+                  >
+                    {selectableRoles.length > 0 ? (
+                      selectableRoles.map((role) => (
+                        <option key={role.id} value={role.key}>{role.label || role.key}</option>
+                      ))
+                    ) : (
+                      <option value="member">MEMBER</option>
+                    )}
                   </select>
                 </div>
                 <Button type="submit" className="w-full py-4 mt-2">Invite User</Button>
@@ -260,8 +269,18 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
                                 <input type="hidden" name="organization_slug" value={orgSlug} />
                                 <input type="hidden" name="member_id" value={member.id} />
                                 <input type="hidden" name="user_id" value={member.user_id} />
-                                <select name="role" defaultValue={r.key} className="h-8 rounded-lg border border-soft bg-white px-2 text-[10px] font-bold focus:ring-1 focus:ring-violet-500">
-                                  {selectableRoles.map((role) => <option key={role} value={role}>{role}</option>)}
+                                <select
+                                  name="role"
+                                  defaultValue={r.key}
+                                  className="h-8 rounded-lg border border-soft bg-white px-2 text-[10px] font-bold focus:ring-1 focus:ring-violet-500"
+                                >
+                                  {selectableRoles.length > 0 ? (
+                                    selectableRoles.map((role) => (
+                                      <option key={role.id} value={role.key}>{role.label || role.key}</option>
+                                    ))
+                                  ) : (
+                                    <option value="member">MEMBER</option>
+                                  )}
                                 </select>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" type="submit"><Save className="h-3.5 w-3.5" /></Button>
                               </form>

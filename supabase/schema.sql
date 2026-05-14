@@ -126,11 +126,33 @@ create table if not exists public.users (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.roles (
+create table if not exists public.modules (
   id uuid primary key default gen_random_uuid(),
-  key public.app_role not null unique,
+  key text not null unique,
   label text not null,
   created_at timestamptz not null default now()
+);
+
+create table if not exists public.roles (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete cascade,
+  key text not null,
+  label text not null,
+  created_at timestamptz not null default now(),
+  constraint roles_key_tenant_unique unique (tenant_id, key)
+);
+
+create table if not exists public.role_permissions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  role_id uuid not null references public.roles(id) on delete cascade,
+  module_id uuid not null references public.modules(id) on delete cascade,
+  can_view boolean not null default false,
+  can_create boolean not null default false,
+  can_edit boolean not null default false,
+  can_delete boolean not null default false,
+  updated_at timestamptz not null default now(),
+  constraint role_permissions_unique unique (tenant_id, role_id, module_id)
 );
 
 create table if not exists public.user_tenant_roles (
@@ -331,7 +353,7 @@ as $$
   );
 $$;
 
-create or replace function public.has_tenant_role(p_tenant_id uuid, p_roles public.app_role[])
+create or replace function public.has_tenant_role(p_tenant_id uuid, p_roles text[])
 returns boolean
 language sql
 stable
@@ -346,6 +368,70 @@ as $$
       and utr.user_id = public.current_app_user_id()
       and utr.is_active = true
       and r.key = any(p_roles)
+  );
+$$;
+
+create or replace function public.has_module_permission(
+  p_tenant_id uuid,
+  p_module_key text,
+  p_action text
+)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_role_key text;
+  v_role_id uuid;
+begin
+  -- 1. Get user's role in this tenant
+  select r.key, r.id
+  into v_role_key, v_role_id
+  from public.user_tenant_roles utr
+  join public.roles r on r.id = utr.role_id
+  where utr.tenant_id = p_tenant_id
+    and utr.user_id = public.current_app_user_id()
+    and utr.is_active = true;
+
+  -- 2. Owner Bypass: Owners always have full access
+  if v_role_key = 'owner' then
+    return true;
+  end if;
+
+  -- 3. Check dynamic permissions table
+  return exists (
+    select 1
+    from public.role_permissions rp
+    join public.modules m on m.id = rp.module_id
+    where rp.tenant_id = p_tenant_id
+      and rp.role_id = v_role_id
+      and m.key = p_module_key
+      and (
+        (p_action = 'view' and rp.can_view) or
+        (p_action = 'create' and rp.can_create) or
+        (p_action = 'edit' and rp.can_edit) or
+        (p_action = 'delete' and rp.can_delete)
+      )
+  );
+end;
+$$;
+
+create or replace function public.is_admin_or_owner_anywhere()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.user_tenant_roles utr
+    join public.roles r on r.id = utr.role_id
+    where utr.user_id = public.current_app_user_id()
+      and utr.is_active = true
+      and r.key in ('owner', 'admin')
   );
 $$;
 
@@ -512,7 +598,7 @@ end;
 $$;
 
 create or replace function public.ensure_user_tenant(p_tenant_slug text default null)
-returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key public.app_role)
+returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key text)
 language plpgsql
 security definer
 set search_path = public
@@ -567,12 +653,12 @@ begin
 
   insert into public.user_tenant_roles (tenant_id, user_id, role_id)
   select v_tenant_id, v_app_user_id, r.id
-  from public.roles r where r.key = 'owner'
+  from public.roles r where r.key = 'owner' and r.tenant_id is null
   on conflict on constraint user_tenant_roles_unique
   do update set role_id = excluded.role_id, is_active = true, updated_at = now();
 
   return query
-  select t.id, t.slug, t.name, 'owner'::public.app_role from public.tenants t where t.id = v_tenant_id;
+  select t.id, t.slug, t.name, 'owner'::text from public.tenants t where t.id = v_tenant_id;
 end;
 $$;
 
@@ -597,7 +683,7 @@ begin
     raise exception 'Authentication required';
   end if;
 
-  if not public.has_tenant_role(p_tenant_id, array['owner','admin']::public.app_role[]) then
+  if not public.has_tenant_role(p_tenant_id, array['owner','admin']::text[]) then
     raise exception 'Forbidden';
   end if;
 
@@ -739,7 +825,7 @@ create index if not exists idx_task_assignees_task_user on public.task_assignees
 create index if not exists idx_todos_tenant_user_status on public.todos(tenant_id, user_id, is_completed, created_at desc);
 
 -- ----------
--- Seed roles
+-- Seed roles and modules
 -- ----------
 insert into public.roles (key, label)
 values
@@ -747,7 +833,22 @@ values
   ('admin', 'Admin'),
   ('member', 'Member'),
   ('client', 'Client')
-on conflict (key) do nothing;
+on conflict (tenant_id, key) do nothing;
+
+-- 4. Seed the Modules
+insert into public.modules (key, label) values
+  ('dashboard', 'Dashboard'),
+  ('projects', 'Projects'),
+  ('roadmap', 'Roadmap'),
+  ('calendar', 'Calendar'),
+  ('tickets', 'Tickets'),
+  ('tasks', 'Tasks'),
+  ('todos', 'Todos'),
+  ('users', 'User Management'),
+  ('settings', 'Settings'),
+  ('rbac', 'Roles & Permissions')
+on conflict (key)
+do update set label = excluded.label;
 
 -- ----------
 -- RLS
@@ -777,8 +878,8 @@ for select using (public.is_tenant_member(id));
 drop policy if exists tenants_update_admin on public.tenants;
 create policy tenants_update_admin on public.tenants
 for update
-using (public.has_tenant_role(id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(id, array['owner','admin']::public.app_role[]));
+using (public.has_tenant_role(id, array['owner','admin']))
+with check (public.has_tenant_role(id, array['owner','admin']));
 
 drop policy if exists users_select_member on public.users;
 create policy users_select_member on public.users
@@ -809,18 +910,18 @@ for select using (public.is_tenant_member(tenant_id));
 drop policy if exists user_tenant_roles_insert_admin on public.user_tenant_roles;
 create policy user_tenant_roles_insert_admin on public.user_tenant_roles
 for insert
-with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists user_tenant_roles_update_admin on public.user_tenant_roles;
 create policy user_tenant_roles_update_admin on public.user_tenant_roles
 for update
-using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists user_tenant_roles_delete_admin on public.user_tenant_roles;
 create policy user_tenant_roles_delete_admin on public.user_tenant_roles
 for delete
-using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tenant_invites_select_member on public.tenant_invites;
 create policy tenant_invites_select_member on public.tenant_invites
@@ -829,65 +930,65 @@ for select using (public.is_tenant_member(tenant_id));
 drop policy if exists tenant_invites_insert_admin on public.tenant_invites;
 create policy tenant_invites_insert_admin on public.tenant_invites
 for insert
-with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tenant_invites_update_admin on public.tenant_invites;
 create policy tenant_invites_update_admin on public.tenant_invites
 for update
-using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tenant_invites_delete_admin on public.tenant_invites;
 create policy tenant_invites_delete_admin on public.tenant_invites
 for delete
-using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists projects_select_scoped on public.projects;
 create policy projects_select_scoped on public.projects
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, id)
 );
 
 drop policy if exists projects_manage_admin on public.projects;
 create policy projects_manage_admin on public.projects
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists project_members_select_scoped on public.project_members;
 create policy project_members_select_scoped on public.project_members
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or (is_active = true and user_id = public.current_app_user_id())
 );
 
 drop policy if exists project_members_manage_admin on public.project_members;
 create policy project_members_manage_admin on public.project_members
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tickets_select_scoped on public.tickets;
 create policy tickets_select_scoped on public.tickets
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, project_id)
 );
 
 drop policy if exists tickets_insert_scoped on public.tickets;
 create policy tickets_insert_scoped on public.tickets
 for insert with check (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, project_id)
 );
 
 drop policy if exists tickets_update_scoped on public.tickets;
 create policy tickets_update_scoped on public.tickets
 for update using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, project_id)
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, project_id)
 );
 
@@ -897,24 +998,24 @@ for select using (public.is_tenant_member(tenant_id));
 
 drop policy if exists ticket_watchers_manage_admin on public.ticket_watchers;
 create policy ticket_watchers_manage_admin on public.ticket_watchers
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tasks_select_scoped on public.tasks;
 create policy tasks_select_scoped on public.tasks
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
   or public.is_project_member(tenant_id, project_id)
 );
 
 drop policy if exists tasks_insert_admin on public.tasks;
 create policy tasks_insert_admin on public.tasks
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists tasks_update_scoped on public.tasks;
 create policy tasks_update_scoped on public.tasks
 for update using (
-  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
   or exists (
     select 1 from public.task_assignees ta
     where ta.task_id = tasks.id
@@ -922,7 +1023,7 @@ for update using (
   )
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
   or exists (
     select 1 from public.task_assignees ta
     where ta.task_id = tasks.id
@@ -936,8 +1037,8 @@ for select using (public.is_tenant_member(tenant_id));
 
 drop policy if exists task_assignees_manage_admin on public.task_assignees;
 create policy task_assignees_manage_admin on public.task_assignees
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists ticket_comments_select_scoped on public.ticket_comments;
 create policy ticket_comments_select_scoped on public.ticket_comments
@@ -956,7 +1057,7 @@ drop policy if exists ticket_comments_delete_self_or_admin on public.ticket_comm
 create policy ticket_comments_delete_self_or_admin on public.ticket_comments
 for delete using (
   user_id = public.current_app_user_id()
-  or public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
+  or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
 );
 
 drop policy if exists time_entries_select_scoped on public.time_entries;
@@ -973,6 +1074,8 @@ for insert with check (public.is_tenant_member(tenant_id));
 alter table public.todos enable row level security;
 alter table public.milestones enable row level security;
 alter table public.task_dependencies enable row level security;
+alter table public.modules enable row level security;
+alter table public.role_permissions enable row level security;
 
 drop policy if exists milestones_select_scoped on public.milestones;
 create policy milestones_select_scoped on public.milestones
@@ -980,8 +1083,8 @@ for select using (public.is_tenant_member(tenant_id));
 
 drop policy if exists milestones_manage_admin on public.milestones;
 create policy milestones_manage_admin on public.milestones
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists task_dependencies_select_scoped on public.task_dependencies;
 create policy task_dependencies_select_scoped on public.task_dependencies
@@ -989,34 +1092,58 @@ for select using (public.is_tenant_member(tenant_id));
 
 drop policy if exists task_dependencies_manage_admin on public.task_dependencies;
 create policy task_dependencies_manage_admin on public.task_dependencies
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[]));
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists todos_select_scoped on public.todos;
 create policy todos_select_scoped on public.todos
-for select using (public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[]));
+for select using (public.has_tenant_role(tenant_id, array['owner','admin','member']));
 
 drop policy if exists todos_insert_scoped on public.todos;
 create policy todos_insert_scoped on public.todos
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin','member']::public.app_role[]));
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin','member']));
 
 drop policy if exists todos_update_scoped on public.todos;
 create policy todos_update_scoped on public.todos
 for update using (
-  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
-  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']))
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
-  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']))
 );
 
 drop policy if exists todos_delete_scoped on public.todos;
 create policy todos_delete_scoped on public.todos
 for delete using (
-  public.has_tenant_role(tenant_id, array['owner','admin']::public.app_role[])
-  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']::public.app_role[]))
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (user_id = public.current_app_user_id() and public.has_tenant_role(tenant_id, array['member']))
 );
+
+-- ----------
+-- Modules RLS
+-- ----------
+drop policy if exists modules_select_authenticated on public.modules;
+create policy modules_select_authenticated on public.modules
+for select to authenticated using (true);
+
+drop policy if exists modules_manage_admin on public.modules;
+create policy modules_manage_admin on public.modules
+for all using (public.is_admin_or_owner_anywhere())
+with check (public.is_admin_or_owner_anywhere());
+
+-- ----------
+-- Role Permissions RLS
+-- ----------
+drop policy if exists role_permissions_select_admin on public.role_permissions;
+create policy role_permissions_select_admin on public.role_permissions
+for select using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists role_permissions_manage_admin on public.role_permissions;
+create policy role_permissions_manage_admin on public.role_permissions
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 -- ----------
 -- RPC grants

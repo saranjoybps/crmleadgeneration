@@ -19,6 +19,7 @@ class RequestContext:
     tenant_slug: str
     tenant_name: str
     role_key: str
+    access_token: str
 
 
 def _extract_org_slug(x_org_slug: str | None = Header(default=None, alias="X-Org-Slug")) -> str | None:
@@ -54,12 +55,31 @@ def get_request_context(
         tenant_slug=str(row["tenant_slug"]),
         tenant_name=str(row["tenant_name"]),
         role_key=str(row["role_key"]),
+        access_token=access_token,
     )
 
 
 def require_roles(*allowed_roles: str):
     def _guard(ctx: RequestContext = Depends(get_request_context)) -> RequestContext:
         if ctx.role_key not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return ctx
+
+    return _guard
+
+
+def require_module_permission(module_key: str, action: str):
+    def _guard(ctx: RequestContext = Depends(get_request_context)) -> RequestContext:
+        # Owner always has access
+        if ctx.role_key == "owner":
+            return ctx
+        
+        supabase: Client = get_supabase_client(access_token=ctx.access_token)
+        has_perm = supabase.rpc(
+            "has_module_permission",
+            {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": action}
+        ).execute()
+        if not has_perm.data:
             raise HTTPException(status_code=403, detail="Forbidden")
         return ctx
 

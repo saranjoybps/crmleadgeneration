@@ -5,6 +5,7 @@ from app.core.deps import RequestContext, get_request_context, require_roles
 from app.core.supabase_client import get_supabase_client
 from app.schemas.common import InviteCreate, RoleAssignment
 from app.services.auth import AuthService
+from app.services.rbac import RBACService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -17,6 +18,13 @@ def signup(ctx: RequestContext = Depends(get_request_context)):
 @router.post("/login")
 def login_bridge(ctx: RequestContext = Depends(get_request_context)):
     return response({"user_id": ctx.app_user_id, "tenant_slug": ctx.tenant_slug, "role": ctx.role_key})
+
+
+@router.get("/permissions")
+def get_user_permissions(ctx: RequestContext = Depends(get_request_context)):
+    supabase = get_supabase_client()
+    permissions = RBACService.get_current_user_permissions(supabase, ctx)
+    return response(permissions)
 
 
 @router.post("/invite")
