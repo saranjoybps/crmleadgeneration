@@ -12,36 +12,37 @@ router = APIRouter(prefix="/milestones", tags=["milestones"])
 @router.get("")
 def list_all_milestones(
     project_id: str | None = Query(default=None),
-    ctx: RequestContext = Depends(require_module_permission("milestones", "view"))
+    department_id: str | None = Query(default=None),
+    ctx: RequestContext = Depends(require_module_permission("roadmap", "view"))
 ):
     supabase = get_supabase_client()
-    milestones = MilestoneService.list_milestones(supabase, ctx, project_id=project_id)
+    milestones = MilestoneService.list_milestones(supabase, ctx, project_id=project_id, department_id=department_id)
     return response(milestones)
 
 
 @router.get("/{milestone_id}")
-def get_milestone(milestone_id: str, ctx: RequestContext = Depends(require_module_permission("milestones", "view"))):
+def get_milestone(milestone_id: str, ctx: RequestContext = Depends(require_module_permission("roadmap", "view"))):
     supabase = get_supabase_client()
     milestone = MilestoneService.get_milestone(supabase, milestone_id, ctx)
     return response(milestone)
 
 
 @router.post("")
-def create_milestone(payload: MilestoneCreate, ctx: RequestContext = Depends(require_module_permission("milestones", "create"))):
+def create_milestone(payload: MilestoneCreate, ctx: RequestContext = Depends(require_module_permission("roadmap", "create"))):
     supabase = get_supabase_client()
     milestone = MilestoneService.create_milestone(supabase, payload, ctx)
     return response(milestone)
 
 
 @router.patch("/{milestone_id}")
-def update_milestone(milestone_id: str, payload: MilestoneUpdate, ctx: RequestContext = Depends(require_module_permission("milestones", "edit"))):
+def update_milestone(milestone_id: str, payload: MilestoneUpdate, ctx: RequestContext = Depends(require_module_permission("roadmap", "edit"))):
     supabase = get_supabase_client()
     milestone = MilestoneService.update_milestone(supabase, milestone_id, payload, ctx)
     return response(milestone)
 
 
 @router.delete("/{milestone_id}")
-def delete_milestone(milestone_id: str, ctx: RequestContext = Depends(require_module_permission("milestones", "delete"))):
+def delete_milestone(milestone_id: str, ctx: RequestContext = Depends(require_module_permission("roadmap", "delete"))):
     supabase = get_supabase_client()
     res = MilestoneService.delete_milestone(supabase, milestone_id, ctx)
     return response(res)

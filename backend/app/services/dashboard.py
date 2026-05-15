@@ -9,10 +9,9 @@ class DashboardService:
         if ctx.role_key in {"owner", "admin"}:
             return None
         rows = (
-            supabase.table("user_department_roles")
+            supabase.table("user_departments")
             .select("department_id")
             .eq("user_id", ctx.app_user_id)
-            .eq("is_active", True)
             .execute()
         )
         return {x["department_id"] for x in (rows.data or [])}

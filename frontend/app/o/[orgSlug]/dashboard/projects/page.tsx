@@ -15,12 +15,13 @@ import { DepartmentSelector } from "@/components/DepartmentSelector";
 
 type ProjectsPageProps = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ error?: string; success?: string; modal?: "view" | "edit" | "delete" | "create"; project?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; modal?: "view" | "edit" | "delete" | "create"; project?: string; department_id?: string }>;
 };
 
 type UserOption = { user_id: string; email: string };
-type ProjectRow = { id: string; name: string; description?: string; status: string };
+type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string };
 type MemberRow = { project_id: string; user_id: string; users?: { email?: string; full_name?: string } | Array<{ email?: string; full_name?: string }> };
+type UserRow = { id: string; email: string; full_name?: string };
 
 function resolveJoinedUserEmail(value: unknown): string {
   if (Array.isArray(value)) return String(value[0]?.email ?? "unknown");
@@ -39,6 +40,7 @@ async function createProject(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const departmentId = String(formData.get("department_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
   const org = await getOrganizationContextOrRedirect(orgSlug);
   
@@ -64,7 +66,7 @@ async function createProject(formData: FormData) {
   const { error } = await apiRequest<ProjectRow>("/api/v1/projects", {
     method: "POST",
     orgSlug,
-    body: { name, description: description || null, status: "active", member_user_ids: ids },
+    body: { name, department_id: departmentId || null, description: description || null, status: "active", member_user_ids: ids },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -78,6 +80,7 @@ async function updateProject(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const departmentId = String(formData.get("department_id") ?? "").trim();
   const status = String(formData.get("status") ?? "active").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
 
@@ -97,7 +100,7 @@ async function updateProject(formData: FormData) {
   const { error } = await apiRequest<ProjectRow>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH",
     orgSlug,
-    body: { name: name || undefined, description: description || null, status },
+    body: { name: name || undefined, department_id: departmentId || undefined, description: description || null, status },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -211,23 +214,26 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
   
   const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions || { can_view: false, can_create: false, can_edit: false, can_delete: false };
 
-  const [projectsRes, usersRes, membersResp] = await Promise.all([
-    apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
-    apiRequest<Array<{ user_id: string; users?: unknown }>>("/api/v1/users?limit=200&offset=0", { orgSlug }),
+  const projectPath = query.department_id ? `/api/v1/projects?department_id=${encodeURIComponent(query.department_id)}` : "/api/v1/projects";
+  const [projectsRes, usersRes, membersResp, departmentsRes] = await Promise.all([
+    apiRequest<ProjectRow[]>(projectPath, { orgSlug }),
+    apiRequest<UserRow[]>("/api/v1/users?limit=200&offset=0", { orgSlug }),
     supabase
       .from("project_members")
       .select("project_id,user_id,users!project_members_user_id_fkey(email,full_name)")
       .eq("tenant_id", org.organization_id)
       .eq("is_active", true),
+    apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug }),
   ]);
 
   if (projectsRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{projectsRes.error}</div>;
 
   const projects = projectsRes.data ?? [];
+  const departments = departmentsRes.data ?? [];
   const users = usersRes.data ?? [];
   const userOptions: UserOption[] = users.map((row) => ({
-    user_id: row.user_id,
-    email: resolveJoinedUserEmail((row as { users?: unknown }).users),
+    user_id: row.id,
+    email: row.full_name ? `${row.full_name} (${row.email})` : row.email,
   }));
   const members = (membersResp.data ?? []) as MemberRow[];
   const selectedProject = projects.find((p) => p.id === query.project);
@@ -373,6 +379,17 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
             />
           </div>
           <div className="space-y-1.5">
+            <label className="text-sm font-medium text-main">Department</label>
+            <select
+              name="department_id"
+              required
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+            >
+              <option value="">Select department...</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
             <label className="text-sm font-medium text-main">Initial Team Members</label>
             <ProjectMembersField users={userOptions} />
           </div>
@@ -467,15 +484,26 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
                   </select>
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-main">Description</label>
-                <textarea 
-                  name="description" 
-                  defaultValue={selectedProject.description ?? ""}
-                  rows={3} 
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-main">Description</label>
+                  <textarea 
+                    name="description" 
+                    defaultValue={selectedProject.description ?? ""}
+                    rows={3} 
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-main">Department</label>
+                  <select
+                    name="department_id"
+                    defaultValue={selectedProject.department_id ?? ""}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  >
+                    <option value="">Unassigned</option>
+                    {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
               <div className="flex justify-end pt-2">
                 <Button type="submit">Save Changes</Button>
               </div>

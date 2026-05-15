@@ -121,7 +121,11 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
 
   const [tenantRes, rolesRes] = await Promise.all([
     supabase.from("tenants").select("id,slug,name,contact_email,domain").eq("id", org.organization_id).maybeSingle(),
-    supabase.from("roles").select("id,key,label").order("created_at", { ascending: true })
+    supabase
+      .from("roles")
+      .select("id,key,label")
+      .or(`tenant_id.eq.${org.organization_id},tenant_id.is.null`)
+      .order("created_at", { ascending: true })
   ]);
 
   if (tenantRes.error || !tenantRes.data) return <p className="p-6 text-red-600">Tenant not found.</p>;

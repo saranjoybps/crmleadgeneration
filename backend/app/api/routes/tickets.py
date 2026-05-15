@@ -12,11 +12,12 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 @router.get("")
 def list_tickets(
     project_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     ctx: RequestContext = Depends(require_module_permission("tickets", "view")),
 ):
     supabase = get_supabase_client()
-    tickets = TicketService.list_tickets(supabase, ctx, project_id=project_id, status=status)
+    tickets = TicketService.list_tickets(supabase, ctx, project_id=project_id, status=status, department_id=department_id)
     return response(tickets)
 
 

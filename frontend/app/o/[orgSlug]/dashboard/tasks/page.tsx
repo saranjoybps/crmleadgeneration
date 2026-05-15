@@ -49,13 +49,12 @@ type TaskRow = {
 };
 type TicketRow = { id: string; title: string };
 type ProjectRow = { id: string; name: string };
+type UserRow = { id: string; email: string; full_name?: string };
 
 const KANBAN_STATUSES = ["open", "in_progress", "review", "hold", "closed"] as const;
 
-function resolveJoinedUserName(value: unknown): string {
-  if (Array.isArray(value)) return String(value[0]?.full_name || value[0]?.email || "unknown");
-  if (value && typeof value === "object" && "full_name" in value) return String((value as { full_name?: string }).full_name || (value as { email?: string }).email || "unknown");
-  return "unknown";
+function resolveUserName(user: UserRow): string {
+  return user.full_name || user.email || "unknown";
 }
 
 async function createTask(formData: FormData) {
@@ -214,7 +213,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
     apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
     apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
     apiRequest<TaskRow[]>(`/api/v1/tasks?${taskQueryParams.toString()}`, { orgSlug }),
-    apiRequest<Array<{ user_id: string; users?: any }>>("/api/v1/users?limit=200&offset=0", { orgSlug }),
+    apiRequest<UserRow[]>("/api/v1/users?limit=200&offset=0", { orgSlug }),
   ]);
 
   if (tasksRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{tasksRes.error}</div>;
@@ -269,7 +268,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 defaultValue={query.user_id || ""}
                 options={[
                   { value: "", label: "All Users" },
-                  ...users.map(u => ({ value: u.user_id, label: resolveJoinedUserName(u.users) }))
+                  ...users.map((u) => ({ value: u.id, label: resolveUserName(u) }))
                 ]}
                 className="h-9 rounded-xl border-none bg-transparent px-3 text-xs font-bold text-main focus:ring-0 cursor-pointer"
               />
@@ -385,9 +384,9 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
             <label className="text-sm font-bold uppercase tracking-wider text-muted">Assign Team Members</label>
             <div className="grid gap-2 sm:grid-cols-2 max-h-[200px] overflow-y-auto p-1">
               {users.map((row) => (
-                <label key={row.user_id} className="flex items-center gap-3 rounded-xl border border-soft p-3 cursor-pointer transition-colors hover:bg-slate-50 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50">
-                  <input type="checkbox" name="assignee_user_ids" value={row.user_id} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
-                  <span className="text-xs font-medium">{resolveJoinedUserName(row.users)}</span>
+                <label key={row.id} className="flex items-center gap-3 rounded-xl border border-soft p-3 cursor-pointer transition-colors hover:bg-slate-50 has-[:checked]:border-violet-300 has-[:checked]:bg-violet-50">
+                  <input type="checkbox" name="assignee_user_ids" value={row.id} className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
+                  <span className="text-xs font-medium">{resolveUserName(row)}</span>
                 </label>
               ))}
             </div>
@@ -555,17 +554,17 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                     <input type="hidden" name="current_assignee_ids" value={(selectedTask.task_assignees || []).map(a => a.user_id).join(",")} />
                     <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1">
                       {users.map((row) => {
-                        const isAssigned = (selectedTask.task_assignees || []).some(a => a.user_id === row.user_id);
+                        const isAssigned = (selectedTask.task_assignees || []).some(a => a.user_id === row.id);
                         return (
-                          <label key={row.user_id} className="flex items-center gap-2 cursor-pointer group">
+                          <label key={row.id} className="flex items-center gap-2 cursor-pointer group">
                             <input 
                               type="checkbox" 
                               name="assignee_user_ids" 
-                              value={row.user_id} 
+                              value={row.id} 
                               defaultChecked={isAssigned}
                               className="h-3.5 w-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" 
                             />
-                            <span className="text-[11px] font-medium text-main group-hover:text-violet-600">{resolveJoinedUserName(row.users)}</span>
+                            <span className="text-[11px] font-medium text-main group-hover:text-violet-600">{resolveUserName(row)}</span>
                           </label>
                         );
                       })}

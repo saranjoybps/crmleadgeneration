@@ -47,26 +47,39 @@ class UserService:
     def list_users(supabase: Client, ctx: RequestContext, limit: int = 20, offset: int = 0):
         data = (
             supabase.table("user_tenant_roles")
-            .select("id,user_id,is_active,roles(key,label),users!user_tenant_roles_user_id_fkey(id,email,full_name,avatar_url),user_department_roles(department_id,department_role_id,departments(id,name)),department_roles(key,label)")
+            .select("id,user_id,is_active,roles(key,label),users!user_tenant_roles_user_id_fkey(id,email,full_name,avatar_url)")
             .eq("tenant_id", ctx.tenant_id)
             .range(offset, offset + limit - 1)
             .execute()
         )
-        
-        # Transform response to include department info
+
+        user_ids = [item.get("user_id") for item in (data.data or []) if item.get("user_id")]
+        dept_map: dict[str, dict] = {}
+        if user_ids:
+            dept_rows = (
+                supabase.table("user_departments")
+                .select("user_id,department_id,departments(id,name,tenant_id)")
+                .in_("user_id", user_ids)
+                .execute()
+            )
+            for row in (dept_rows.data or []):
+                user_id = row.get("user_id")
+                dept = row.get("departments") or {}
+                if (
+                    user_id
+                    and user_id not in dept_map
+                    and str(dept.get("tenant_id") or "") == ctx.tenant_id
+                ):
+                    dept_map[user_id] = {
+                        "department_id": row.get("department_id"),
+                        "department_name": dept.get("name"),
+                    }
+
         users = []
         if data.data:
             for item in data.data:
                 user = item.get("users") or {}
-                user_dept_roles = item.get("user_department_roles") or []
-                dept_info = {}
-                if user_dept_roles:
-                    udr = user_dept_roles[0]  # Get first department role
-                    dept = udr.get("departments") or {}
-                    dept_info = {
-                        "department_id": udr.get("department_id"),
-                        "department_name": dept.get("name")
-                    }
+                dept_info = dept_map.get(item.get("user_id"), {})
                 
                 users.append({
                     "id": user.get("id"),

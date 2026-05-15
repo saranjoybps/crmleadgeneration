@@ -30,15 +30,12 @@ export type Department = {
   member_count?: number;
 };
 
-export type DepartmentRole = "manager" | "lead" | "member";
-
 export type DepartmentMember = {
   user_id: string;
-  user_email: string;
-  user_full_name: string | null;
-  department_role_key: string;
-  department_role_label: string;
-  joined_at: string;
+  email: string;
+  full_name: string | null;
+  avatar_url?: string | null;
+  joined_at?: string | null;
 };
 
 export type OrganizationMember = {

@@ -7,15 +7,19 @@ from app.schemas.rbac import RoleCreate, RoleUpdate, ModuleCreate, PermissionUpd
 
 class RBACService:
     @staticmethod
-    def list_roles(supabase: Client, ctx: RequestContext):
+    def _list_tenant_and_system_roles(supabase: Client, tenant_id: str):
         res = (
             supabase.table("roles")
             .select("*")
-            .eq("tenant_id", ctx.tenant_id)
+            .or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
             .order("created_at")
             .execute()
         )
         return res.data or []
+
+    @staticmethod
+    def list_roles(supabase: Client, ctx: RequestContext):
+        return RBACService._list_tenant_and_system_roles(supabase, ctx.tenant_id)
 
     @staticmethod
     def create_role(supabase: Client, payload: RoleCreate, ctx: RequestContext):
@@ -151,15 +155,7 @@ class RBACService:
 
     @staticmethod
     def get_role_permissions(supabase: Client, ctx: RequestContext):
-        # Get all roles for tenant
-        roles_res = (
-            supabase.table("roles")
-            .select("id, key, label")
-            .eq("tenant_id", ctx.tenant_id)
-            .order("created_at")
-            .execute()
-        )
-        roles = roles_res.data or []
+        roles = RBACService._list_tenant_and_system_roles(supabase, ctx.tenant_id)
 
         # Get all modules
         modules_res = (
@@ -207,16 +203,27 @@ class RBACService:
 
     @staticmethod
     def get_current_user_permissions(supabase: Client, ctx: RequestContext):
+        role_assignment_res = (
+            supabase.table("user_tenant_roles")
+            .select("role_id")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        role_assignment = (role_assignment_res.data or [None])[0]
+        if not role_assignment:
+            raise HTTPException(status_code=404, detail="Role assignment not found")
+
         role_res = (
             supabase.table("roles")
             .select("id,key,label")
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("key", ctx.role_key)
-            .maybe_single()
+            .eq("id", role_assignment["role_id"])
+            .limit(1)
             .execute()
         )
-
-        role = role_res.data
+        role = (role_res.data or [None])[0]
         if not role:
             raise HTTPException(status_code=404, detail="Role not found")
 

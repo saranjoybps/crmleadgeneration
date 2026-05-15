@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.utils import response
 from app.core.deps import RequestContext, require_module_permission
@@ -10,9 +10,12 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.get("")
-def list_projects(ctx: RequestContext = Depends(require_module_permission("projects", "view"))):
+def list_projects(
+    department_id: str | None = Query(default=None),
+    ctx: RequestContext = Depends(require_module_permission("projects", "view")),
+):
     supabase = get_supabase_client()
-    projects = ProjectService.list_projects(supabase, ctx)
+    projects = ProjectService.list_projects(supabase, ctx, department_id=department_id)
     return response(projects)
 
 

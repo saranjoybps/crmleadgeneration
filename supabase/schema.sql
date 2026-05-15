@@ -138,36 +138,26 @@ create table if not exists public.departments (
   constraint departments_name_nonempty check (name <> '')
 );
 
-create table if not exists public.department_roles (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  key text not null,
-  label text not null,
-  created_at timestamptz not null default now(),
-  constraint department_roles_key_tenant_unique unique (tenant_id, key)
-);
-
-create table if not exists public.user_department_roles (
+create table if not exists public.user_departments (
   user_id uuid not null references public.users(id) on delete cascade,
   department_id uuid not null references public.departments(id) on delete cascade,
-  department_role_id uuid not null references public.department_roles(id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, department_id)
 );
 
-create table if not exists public.department_permissions (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  department_role_id uuid not null references public.department_roles(id) on delete cascade,
-  module_id uuid not null references public.modules(id) on delete cascade,
-  can_view boolean not null default false,
-  can_create boolean not null default false,
-  can_edit boolean not null default false,
-  can_delete boolean not null default false,
-  updated_at timestamptz not null default now(),
-  constraint department_permissions_unique unique (tenant_id, department_role_id, module_id)
-);
+do $$
+begin
+  if to_regclass('public.user_department_roles') is not null then
+    execute '
+      insert into public.user_departments (user_id, department_id, created_at, updated_at)
+      select user_id, department_id, created_at, updated_at
+      from public.user_department_roles
+      on conflict (user_id, department_id) do update
+      set updated_at = excluded.updated_at
+    ';
+  end if;
+end $$;
 
 create table if not exists public.modules (
   id uuid primary key default gen_random_uuid(),
@@ -699,8 +689,8 @@ begin
     from public.user_tenant_roles utr
     join public.tenants t on t.id = utr.tenant_id
     join public.roles r on r.id = utr.role_id
-    left join public.user_department_roles udr on udr.user_id = utr.user_id
-    left join public.departments d on d.id = udr.department_id and d.tenant_id = t.id
+    left join public.user_departments ud on ud.user_id = utr.user_id
+    left join public.departments d on d.id = ud.department_id and d.tenant_id = t.id
     where utr.user_id = v_app_user_id and utr.is_active = true and t.slug = p_tenant_slug
     limit 1;
     if found then
@@ -713,8 +703,8 @@ begin
   from public.user_tenant_roles utr
   join public.tenants t on t.id = utr.tenant_id
   join public.roles r on r.id = utr.role_id
-  left join public.user_department_roles udr on udr.user_id = utr.user_id
-  left join public.departments d on d.id = udr.department_id and d.tenant_id = t.id
+  left join public.user_departments ud on ud.user_id = utr.user_id
+  left join public.departments d on d.id = ud.department_id and d.tenant_id = t.id
   where utr.user_id = v_app_user_id and utr.is_active = true
   order by utr.created_at asc
   limit 1;
@@ -746,12 +736,10 @@ begin
   on conflict on constraint user_tenant_roles_unique
   do update set role_id = excluded.role_id, is_active = true, updated_at = now();
 
-  -- Assign user to default department with default role
-  insert into public.user_department_roles (user_id, department_id, department_role_id)
-  select v_app_user_id, v_department_id, dr.id
-  from public.department_roles dr
-  where dr.tenant_id = v_tenant_id and dr.key = 'member'
-  on conflict (user_id, department_id) do update set department_role_id = excluded.department_role_id, updated_at = now();
+  -- Assign user to default department
+  insert into public.user_departments (user_id, department_id)
+  values (v_app_user_id, v_department_id)
+  on conflict (user_id, department_id) do update set updated_at = now();
 
   return query
   select t.id, t.slug, t.name, 'owner'::text, v_department_id, 'General'::text from public.tenants t where t.id = v_tenant_id;
@@ -851,7 +839,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','department_roles','user_department_roles','department_permissions']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -916,10 +904,8 @@ create index if not exists idx_user_tenant_roles_tenant on public.user_tenant_ro
 create index if not exists idx_user_tenant_roles_user on public.user_tenant_roles(user_id, is_active);
 create index if not exists idx_tenant_invites_tenant_status on public.tenant_invites(tenant_id, status, created_at desc);
 create index if not exists idx_departments_tenant on public.departments(tenant_id);
-create index if not exists idx_department_roles_tenant on public.department_roles(tenant_id);
-create index if not exists idx_user_department_roles_user on public.user_department_roles(user_id);
-create index if not exists idx_user_department_roles_department on public.user_department_roles(department_id);
-create index if not exists idx_department_permissions_tenant_role on public.department_permissions(tenant_id, department_role_id);
+create index if not exists idx_user_departments_user on public.user_departments(user_id);
+create index if not exists idx_user_departments_department on public.user_departments(department_id);
 create index if not exists idx_projects_tenant_status on public.projects(tenant_id, status, created_at desc);
 create index if not exists idx_project_members_project_user on public.project_members(project_id, user_id, is_active);
 create index if not exists idx_tickets_tenant_project_status on public.tickets(tenant_id, project_id, status, created_at desc);
@@ -938,19 +924,6 @@ values
   ('admin', 'Admin'),
   ('member', 'Member'),
   ('client', 'Client')
-on conflict (tenant_id, key) do nothing;
-
--- Seed Department Roles
-insert into public.department_roles (tenant_id, key, label)
-select t.id, dr.key, dr.label
-from (
-  select null::uuid as tenant_id, 'manager' as key, 'Manager' as label
-  union all
-  select null::uuid as tenant_id, 'lead' as key, 'Lead' as label
-  union all
-  select null::uuid as tenant_id, 'member' as key, 'Member' as label
-) dr
-cross join public.tenants t
 on conflict (tenant_id, key) do nothing;
 
 -- 4. Seed the Modules
@@ -1069,7 +1042,7 @@ for select using (
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
-      select 1 from public.user_department_roles udr
+      select 1 from public.user_departments udr
       where udr.user_id = public.current_app_user_id()
         and udr.department_id = projects.department_id
     )
@@ -1101,7 +1074,7 @@ for select using (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
       select 1 from public.projects p
-      join public.user_department_roles udr on udr.department_id = p.department_id
+      join public.user_departments udr on udr.department_id = p.department_id
       where p.id = tickets.project_id
         and udr.user_id = public.current_app_user_id()
     )
@@ -1116,7 +1089,7 @@ for insert with check (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
       select 1 from public.projects p
-      join public.user_department_roles udr on udr.department_id = p.department_id
+      join public.user_departments udr on udr.department_id = p.department_id
       where p.id = tickets.project_id
         and udr.user_id = public.current_app_user_id()
     )
@@ -1131,7 +1104,7 @@ for update using (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
       select 1 from public.projects p
-      join public.user_department_roles udr on udr.department_id = p.department_id
+      join public.user_departments udr on udr.department_id = p.department_id
       where p.id = tickets.project_id
         and udr.user_id = public.current_app_user_id()
     )
@@ -1143,7 +1116,7 @@ with check (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
       select 1 from public.projects p
-      join public.user_department_roles udr on udr.department_id = p.department_id
+      join public.user_departments udr on udr.department_id = p.department_id
       where p.id = tickets.project_id
         and udr.user_id = public.current_app_user_id()
     )
@@ -1166,7 +1139,7 @@ for select using (
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
-      select 1 from public.user_department_roles udr
+      select 1 from public.user_departments udr
       where udr.user_id = public.current_app_user_id()
         and udr.department_id = tasks.department_id
     )
@@ -1250,7 +1223,7 @@ for select using (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
       select 1 from public.projects p
-      join public.user_department_roles udr on udr.department_id = p.department_id
+      join public.user_departments udr on udr.department_id = p.department_id
       where p.id = milestones.project_id
         and udr.user_id = public.current_app_user_id()
     )
@@ -1325,9 +1298,7 @@ with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 -- Departments RLS
 -- ----------
 alter table public.departments enable row level security;
-alter table public.department_roles enable row level security;
-alter table public.user_department_roles enable row level security;
-alter table public.department_permissions enable row level security;
+alter table public.user_departments enable row level security;
 
 drop policy if exists departments_select_member on public.departments;
 create policy departments_select_member on public.departments
@@ -1338,50 +1309,32 @@ create policy departments_manage_admin on public.departments
 for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
 with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
-drop policy if exists department_roles_select_member on public.department_roles;
-create policy department_roles_select_member on public.department_roles
-for select using (public.is_tenant_member(tenant_id));
-
-drop policy if exists department_roles_manage_admin on public.department_roles;
-create policy department_roles_manage_admin on public.department_roles
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
-
-drop policy if exists user_department_roles_select_member on public.user_department_roles;
-create policy user_department_roles_select_member on public.user_department_roles
+drop policy if exists user_departments_select_member on public.user_departments;
+create policy user_departments_select_member on public.user_departments
 for select using (
   exists (
     select 1 from public.departments d
-    where d.id = user_department_roles.department_id
+    where d.id = user_departments.department_id
       and public.is_tenant_member(d.tenant_id)
   )
 );
 
-drop policy if exists user_department_roles_manage_admin on public.user_department_roles;
-create policy user_department_roles_manage_admin on public.user_department_roles
+drop policy if exists user_departments_manage_admin on public.user_departments;
+create policy user_departments_manage_admin on public.user_departments
 for all using (
   exists (
     select 1 from public.departments d
-    where d.id = user_department_roles.department_id
+    where d.id = user_departments.department_id
       and public.has_tenant_role(d.tenant_id, array['owner','admin'])
   )
 )
 with check (
   exists (
     select 1 from public.departments d
-    where d.id = user_department_roles.department_id
+    where d.id = user_departments.department_id
       and public.has_tenant_role(d.tenant_id, array['owner','admin'])
   )
 );
-
-drop policy if exists department_permissions_select_admin on public.department_permissions;
-create policy department_permissions_select_admin on public.department_permissions
-for select using (public.has_tenant_role(tenant_id, array['owner','admin']));
-
-drop policy if exists department_permissions_manage_admin on public.department_permissions;
-create policy department_permissions_manage_admin on public.department_permissions
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 -- ----------
 -- RPC grants
@@ -1401,3 +1354,8 @@ drop type if exists public.organization_role;
 drop table if exists public.organization_invites cascade;
 drop table if exists public.organization_members cascade;
 drop table if exists public.organizations cascade;
+
+-- Cleanup deprecated department-level RBAC objects
+drop table if exists public.department_permissions cascade;
+drop table if exists public.user_department_roles cascade;
+drop table if exists public.department_roles cascade;

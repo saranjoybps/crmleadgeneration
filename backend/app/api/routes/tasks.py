@@ -14,6 +14,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 def list_tasks(
     project_id: str | None = Query(default=None),
     ticket_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
     assigned_to_me: bool = Query(default=False),
     user_id: str | None = Query(default=None),
@@ -25,6 +26,7 @@ def list_tasks(
         ctx,
         project_id=project_id,
         ticket_id=ticket_id,
+        department_id=department_id,
         status=status,
         assigned_to_me=assigned_to_me,
         user_id=user_id,

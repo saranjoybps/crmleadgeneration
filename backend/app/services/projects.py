@@ -25,16 +25,15 @@ class ProjectService:
         if ctx.role_key in {"owner", "admin"}:
             return None
         rows = (
-            supabase.table("user_department_roles")
+            supabase.table("user_departments")
             .select("department_id")
             .eq("user_id", ctx.app_user_id)
-            .eq("is_active", True)
             .execute()
         )
         return {x["department_id"] for x in (rows.data or [])}
 
     @classmethod
-    def list_projects(cls, supabase: Client, ctx: RequestContext):
+    def list_projects(cls, supabase: Client, ctx: RequestContext, department_id: str | None = None):
         query = (
             supabase.table("projects")
             .select("id,tenant_id,department_id,name,description,status,created_by,created_at,updated_at")
@@ -47,6 +46,8 @@ class ProjectService:
         allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
         if allowed_department_ids is not None:
             rows = [row for row in rows if row.get("department_id") in allowed_department_ids]
+        if department_id:
+            rows = [row for row in rows if row.get("department_id") == department_id]
         
         return rows
 
@@ -72,9 +73,17 @@ class ProjectService:
 
     @staticmethod
     def create_project(supabase: Client, payload: ProjectCreate, ctx: RequestContext):
+        department_id = payload.department_id or ctx.department_id
+        if not department_id:
+            raise HTTPException(status_code=400, detail="department_id is required")
+        if ctx.role_key not in {"owner", "admin"}:
+            allowed_department_ids = ProjectService._get_accessible_department_ids(supabase, ctx) or set()
+            if department_id not in allowed_department_ids:
+                raise HTTPException(status_code=403, detail="Forbidden for this department")
+
         body = {
             "tenant_id": ctx.tenant_id,
-            "department_id": ctx.department_id,
+            "department_id": department_id,
             "name": payload.name,
             "description": payload.description,
             "status": payload.status or "active",
@@ -106,6 +115,10 @@ class ProjectService:
 
     @staticmethod
     def update_project(supabase: Client, project_id: str, payload: ProjectUpdate, ctx: RequestContext):
+        if payload.department_id is not None and ctx.role_key not in {"owner", "admin"}:
+            allowed_department_ids = ProjectService._get_accessible_department_ids(supabase, ctx) or set()
+            if payload.department_id not in allowed_department_ids:
+                raise HTTPException(status_code=403, detail="Forbidden for this department")
         updated = (
             supabase.table("projects")
             .update(payload.model_dump(exclude_none=True))

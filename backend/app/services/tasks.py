@@ -27,10 +27,9 @@ class TaskService:
         if ctx.role_key in {"owner", "admin"}:
             return None
         rows = (
-            supabase.table("user_department_roles")
+            supabase.table("user_departments")
             .select("department_id")
             .eq("user_id", ctx.app_user_id)
-            .eq("is_active", True)
             .execute()
         )
         return {x["department_id"] for x in (rows.data or [])}
@@ -42,6 +41,7 @@ class TaskService:
         ctx: RequestContext,
         project_id: str | None = None,
         ticket_id: str | None = None,
+        department_id: str | None = None,
         status: str | None = None,
         assigned_to_me: bool = False,
         user_id: str | None = None,
@@ -72,6 +72,8 @@ class TaskService:
         allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
         if allowed_department_ids is not None:
             rows = [row for row in rows if row.get("department_id") in allowed_department_ids]
+        if department_id:
+            rows = [row for row in rows if row.get("department_id") == department_id]
         
         # Filter by user_id if provided (tasks where this user is assigned)
         if user_id:
