@@ -5,19 +5,23 @@ import { Plus, Ticket, Info, Edit, Trash2, Split, Clock, CheckCircle2, AlertCirc
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { TicketComments } from "@/components/TicketComments";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
+import { ProjectMilestoneSelector } from "@/components/ProjectMilestoneSelector";
+import { cn } from "@/lib/utils";
+import { Milestone } from "@/lib/types";
 
 type TicketsPageProps = {
   params: Promise<{ orgSlug: string }>;
   searchParams: Promise<{ error?: string; success?: string; project_id?: string; modal?: "create" | "edit" | "delete"; ticket_id?: string; department_id?: string }>;
 };
 
-type Milestone = { id: string; name: string; project_id: string };
+// Removed local Milestone type to use the shared one from @/lib/types
 
 async function createTicket(formData: FormData) {
   "use server";
@@ -184,7 +188,8 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   const milestonesUrl = selectedProject 
     ? `/api/v1/milestones?project_id=${selectedProject}` 
     : (projects[0]?.id ? `/api/v1/milestones?project_id=${projects[0].id}` : "/api/v1/milestones");
-  const { data: milestones } = await apiRequest<Milestone[]>(milestonesUrl, { orgSlug });
+  const { data: milestonesRes } = await apiRequest<Milestone[]>(milestonesUrl, { orgSlug });
+  const milestones = milestonesRes ?? [];
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -219,6 +224,8 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
         <div className="flex items-center gap-4">
           <DepartmentSelector
             orgSlug={orgSlug}
+            value={query.department_id || ""}
+            name="department_id"
             placeholder="Filter by department..."
             showAllOption={true}
             className="w-48"

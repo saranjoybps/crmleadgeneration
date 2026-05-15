@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Building } from "lucide-react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 import { Department } from "@/lib/types";
 import { apiRequest } from "@/lib/api-client";
@@ -9,7 +10,8 @@ import { apiRequest } from "@/lib/api-client";
 interface DepartmentSelectorProps {
   orgSlug: string;
   value?: string;
-  onChange: (departmentId: string) => void;
+  name?: string;
+  onChange?: (departmentId: string) => void;
   placeholder?: string;
   showAllOption?: boolean;
   className?: string;
@@ -18,6 +20,7 @@ interface DepartmentSelectorProps {
 export function DepartmentSelector({
   orgSlug,
   value,
+  name,
   onChange,
   placeholder = "Select department...",
   showAllOption = false,
@@ -25,6 +28,9 @@ export function DepartmentSelector({
 }: DepartmentSelectorProps) {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     loadDepartments();
@@ -46,11 +52,26 @@ export function DepartmentSelector({
     }
   };
 
+  const handleChange = (val: string) => {
+    if (onChange) {
+      onChange(val);
+    } else if (name) {
+      const params = new URLSearchParams(searchParams.toString());
+      if (val) {
+        params.set(name, val);
+      } else {
+        params.delete(name);
+      }
+      router.push(`${pathname}?${params.toString()}`);
+    }
+  };
+
   return (
     <div className={`relative ${className}`}>
       <select
+        name={name}
         value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         className="w-full px-4 py-3 rounded-xl border border-soft bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all appearance-none"
         disabled={loading}
       >

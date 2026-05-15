@@ -29,8 +29,8 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
           styles: {
             progressColor: '#f59e0b',
             progressSelectedColor: '#d97706',
-            barColor: '#fef3c7',
-            barSelectedColor: '#fde68a',
+            backgroundColor: '#fef3c7',
+            backgroundSelectedColor: '#fde68a',
           },
           project: m.project_id,
         });
@@ -49,8 +49,8 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
             styles: {
               progressColor: '#10b981',
               progressSelectedColor: '#059669',
-              barColor: '#d1fae5',
-              barSelectedColor: '#a7f3d0',
+              backgroundColor: '#d1fae5',
+              backgroundSelectedColor: '#a7f3d0',
             },
             project: t.project_id,
           });
@@ -69,8 +69,8 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
               styles: {
                 progressColor: '#7c3aed',
                 progressSelectedColor: '#6d28d9',
-                barColor: '#ddd6fe',
-                barSelectedColor: '#c4b5fd',
+                backgroundColor: '#ddd6fe',
+                backgroundSelectedColor: '#c4b5fd',
               },
               project: tsk.project_id,
               dependencies: tsk.dependencies?.map((d: any) => d.depends_on_task_id) || [],
@@ -93,8 +93,8 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
             styles: {
               progressColor: '#7c3aed',
               progressSelectedColor: '#6d28d9',
-              barColor: '#ddd6fe',
-              barSelectedColor: '#c4b5fd',
+              backgroundColor: '#ddd6fe',
+              backgroundSelectedColor: '#c4b5fd',
             },
             project: t.project_id,
             dependencies: t.dependencies?.map((d: any) => d.depends_on_task_id) || [],
@@ -124,7 +124,6 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
         columnWidth={60}
         fontSize="12px"
         barCornerRadius={8}
-        handleSize={8}
       />
     </div>
   );

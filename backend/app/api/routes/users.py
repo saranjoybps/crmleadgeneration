@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header
 
 from app.api.utils import response
-from app.core.deps import RequestContext, require_users_or_departments_view
+from app.core.deps import RequestContext, require_users_or_departments_view, require_module_permission
 from app.core.supabase_client import get_supabase_client
 from app.schemas.common import UserCreate, UserUpdate
 from app.services.users import UserService

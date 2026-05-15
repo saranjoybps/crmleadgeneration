@@ -9,6 +9,8 @@ import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
 
 type ProjectsPageProps = {
@@ -253,6 +255,8 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
         <div className="flex items-center gap-4">
           <DepartmentSelector
             orgSlug={orgSlug}
+            value={query.department_id || ""}
+            name="department_id"
             placeholder="Filter by department..."
             showAllOption={true}
             className="w-48"

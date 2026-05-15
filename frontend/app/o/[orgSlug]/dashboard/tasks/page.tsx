@@ -11,6 +11,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
 import { DepartmentSelector } from "@/components/DepartmentSelector";
+import { AutoSubmitSelect } from "@/components/AutoSubmitSelect";
+import { KanbanBoard } from "@/components/KanbanBoard";
 
 type TasksPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -276,15 +278,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 <DepartmentSelector
                   orgSlug={orgSlug}
                   value={query.department_id || ""}
-                  onChange={(deptId) => {
-                    const url = new URL(window.location.href);
-                    if (deptId) {
-                      url.searchParams.set('department_id', deptId);
-                    } else {
-                      url.searchParams.delete('department_id');
-                    }
-                    window.location.href = url.toString();
-                  }}
+                  name="department_id"
                   placeholder="All Departments"
                   showAllOption={true}
                   className="h-9 w-40 text-xs"

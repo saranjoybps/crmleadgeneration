@@ -31,7 +31,7 @@ export async function getApiContext(orgSlug?: string) {
 export async function apiRequest<T>(
   path: string,
   options: {
-    method?: "GET" | "POST" | "PATCH" | "DELETE";
+    method?: "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
     body?: any;
     orgSlug?: string;
     cache?: RequestCache;
