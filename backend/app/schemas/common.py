@@ -27,6 +27,20 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     full_name: str | None = None
     avatar_url: str | None = None
+    department_id: str | None = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str | None
+    avatar_url: str | None
+    is_active: bool
+    department_id: str | None = None
+    department_name: str | None = None
+    created_at: str
+    updated_at: str
+
 
 
 class WorkspaceUpdate(BaseModel):

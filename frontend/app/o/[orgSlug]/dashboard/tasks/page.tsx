@@ -10,8 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/utils";
-import { KanbanBoard } from "@/components/KanbanBoard";
-import { AutoSubmitSelect } from "@/components/AutoSubmitSelect";
+import { DepartmentSelector } from "@/components/DepartmentSelector";
 
 type TasksPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -23,6 +22,7 @@ type TasksPageProps = {
     ticket_id?: string;
     project_id?: string;
     user_id?: string;
+    department_id?: string;
   }>;
 };
 
@@ -206,6 +206,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   const taskQueryParams = new URLSearchParams();
   if (query.project_id) taskQueryParams.append("project_id", query.project_id);
   if (query.user_id) taskQueryParams.append("user_id", query.user_id);
+  if (query.department_id) taskQueryParams.append("department_id", query.department_id);
 
   const [ticketsRes, projectsRes, tasksRes, usersRes] = await Promise.all([
     apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
@@ -271,7 +272,26 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                 className="h-9 rounded-xl border-none bg-transparent px-3 text-xs font-bold text-main focus:ring-0 cursor-pointer"
               />
 
-              {(query.project_id || query.user_id) && (
+              <div className="border-l border-soft pl-2">
+                <DepartmentSelector
+                  orgSlug={orgSlug}
+                  value={query.department_id || ""}
+                  onChange={(deptId) => {
+                    const url = new URL(window.location.href);
+                    if (deptId) {
+                      url.searchParams.set('department_id', deptId);
+                    } else {
+                      url.searchParams.delete('department_id');
+                    }
+                    window.location.href = url.toString();
+                  }}
+                  placeholder="All Departments"
+                  showAllOption={true}
+                  className="h-9 w-40 text-xs"
+                />
+              </div>
+
+              {(query.project_id || query.user_id || query.department_id) && (
                 <Link 
                   href={`/o/${orgSlug}/dashboard/tasks`}
                   className="flex h-9 items-center justify-center rounded-xl px-3 text-xs font-bold text-muted hover:text-red-500 transition-colors border-l border-soft"

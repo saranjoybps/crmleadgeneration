@@ -20,25 +20,41 @@ class ProjectService:
         )
         return {x["project_id"] for x in (rows.data or [])}
 
+    @staticmethod
+    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
+        if ctx.role_key in {"owner", "admin"}:
+            return None
+        rows = (
+            supabase.table("user_department_roles")
+            .select("department_id")
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        return {x["department_id"] for x in (rows.data or [])}
+
     @classmethod
     def list_projects(cls, supabase: Client, ctx: RequestContext):
         query = (
             supabase.table("projects")
-            .select("id,tenant_id,name,description,status,created_by,created_at,updated_at")
+            .select("id,tenant_id,department_id,name,description,status,created_by,created_at,updated_at")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
         rows = query.execute().data or []
-        allowed_ids = cls._get_accessible_project_ids(supabase, ctx)
-        if allowed_ids is not None:
-            rows = [row for row in rows if row["id"] in allowed_ids]
+        
+        # Apply department-based filtering for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None:
+            rows = [row for row in rows if row.get("department_id") in allowed_department_ids]
+        
         return rows
 
     @classmethod
     def get_project(cls, supabase: Client, project_id: str, ctx: RequestContext):
         data = (
             supabase.table("projects")
-            .select("id,tenant_id,name,description,status,created_by,created_at,updated_at")
+            .select("id,tenant_id,department_id,name,description,status,created_by,created_at,updated_at")
             .eq("tenant_id", ctx.tenant_id)
             .eq("id", project_id)
             .maybe_single()
@@ -47,8 +63,9 @@ class ProjectService:
         if not data.data:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        allowed_ids = cls._get_accessible_project_ids(supabase, ctx)
-        if allowed_ids is not None and project_id not in allowed_ids:
+        # Check department access for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None and data.data.get("department_id") not in allowed_department_ids:
             raise HTTPException(status_code=404, detail="Project not found")
         
         return data.data
@@ -57,6 +74,7 @@ class ProjectService:
     def create_project(supabase: Client, payload: ProjectCreate, ctx: RequestContext):
         body = {
             "tenant_id": ctx.tenant_id,
+            "department_id": ctx.department_id,
             "name": payload.name,
             "description": payload.description,
             "status": payload.status or "active",

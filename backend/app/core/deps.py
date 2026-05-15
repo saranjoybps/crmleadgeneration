@@ -20,6 +20,8 @@ class RequestContext:
     tenant_name: str
     role_key: str
     access_token: str
+    department_id: str | None = None
+    department_name: str | None = None
 
 
 def _extract_org_slug(x_org_slug: str | None = Header(default=None, alias="X-Org-Slug")) -> str | None:
@@ -56,6 +58,8 @@ def get_request_context(
         tenant_name=str(row["tenant_name"]),
         role_key=str(row["role_key"]),
         access_token=access_token,
+        department_id=str(row["department_id"]) if row.get("department_id") else None,
+        department_name=str(row["department_name"]) if row.get("department_name") else None,
     )
 
 
@@ -80,6 +84,33 @@ def require_module_permission(module_key: str, action: str):
             {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": action}
         ).execute()
         if not has_perm.data:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return ctx
+
+    return _guard
+
+
+def require_users_or_departments_view():
+    def _guard(ctx: RequestContext = Depends(get_request_context)) -> RequestContext:
+        # Owner always has access
+        if ctx.role_key == "owner":
+            return ctx
+        
+        supabase: Client = get_supabase_client(access_token=ctx.access_token)
+        
+        # Check if user has users view permission
+        has_users_perm = supabase.rpc(
+            "has_module_permission",
+            {"p_tenant_id": ctx.tenant_id, "p_module_key": "users", "p_action": "view"}
+        ).execute()
+        
+        # Check if user has departments view permission
+        has_depts_perm = supabase.rpc(
+            "has_module_permission",
+            {"p_tenant_id": ctx.tenant_id, "p_module_key": "departments", "p_action": "view"}
+        ).execute()
+        
+        if not has_users_perm.data and not has_depts_perm.data:
             raise HTTPException(status_code=403, detail="Forbidden")
         return ctx
 

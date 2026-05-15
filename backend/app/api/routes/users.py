@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header
 
 from app.api.utils import response
-from app.core.deps import RequestContext, require_module_permission
+from app.core.deps import RequestContext, require_users_or_departments_view
 from app.core.supabase_client import get_supabase_client
 from app.schemas.common import UserCreate, UserUpdate
 from app.services.users import UserService
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("")
-def list_users(limit: int = 20, offset: int = 0, ctx: RequestContext = Depends(require_module_permission("users", "view"))):
+def list_users(limit: int = 20, offset: int = 0, ctx: RequestContext = Depends(require_users_or_departments_view())):
     supabase = get_supabase_client()
     users = UserService.list_users(supabase, ctx, limit=limit, offset=offset)
     return response(users, {"limit": limit, "offset": offset})

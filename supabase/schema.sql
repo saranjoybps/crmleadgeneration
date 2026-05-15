@@ -126,6 +126,49 @@ create table if not exists public.users (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.departments (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  description text null,
+  slug text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint departments_slug_tenant_unique unique (tenant_id, slug),
+  constraint departments_name_nonempty check (name <> '')
+);
+
+create table if not exists public.department_roles (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  key text not null,
+  label text not null,
+  created_at timestamptz not null default now(),
+  constraint department_roles_key_tenant_unique unique (tenant_id, key)
+);
+
+create table if not exists public.user_department_roles (
+  user_id uuid not null references public.users(id) on delete cascade,
+  department_id uuid not null references public.departments(id) on delete cascade,
+  department_role_id uuid not null references public.department_roles(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, department_id)
+);
+
+create table if not exists public.department_permissions (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  department_role_id uuid not null references public.department_roles(id) on delete cascade,
+  module_id uuid not null references public.modules(id) on delete cascade,
+  can_view boolean not null default false,
+  can_create boolean not null default false,
+  can_edit boolean not null default false,
+  can_delete boolean not null default false,
+  updated_at timestamptz not null default now(),
+  constraint department_permissions_unique unique (tenant_id, department_role_id, module_id)
+);
+
 create table if not exists public.modules (
   id uuid primary key default gen_random_uuid(),
   key text not null unique,
@@ -199,6 +242,7 @@ create table if not exists public.milestones (
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
+  department_id uuid null references public.departments(id) on delete set null,
   name text not null,
   description text null,
   status public.project_status not null default 'active',
@@ -206,6 +250,13 @@ create table if not exists public.projects (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Add department_id column to projects table if it doesn't exist
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_name = 'projects' and column_name = 'department_id') then
+    alter table public.projects add column department_id uuid null references public.departments(id) on delete set null;
+  end if;
+end $$;
 
 create table if not exists public.project_members (
   id uuid primary key default gen_random_uuid(),
@@ -248,6 +299,7 @@ create table if not exists public.ticket_watchers (
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
+  department_id uuid null references public.departments(id) on delete set null,
   project_id uuid not null references public.projects(id) on delete cascade,
   ticket_id uuid not null references public.tickets(id) on delete cascade,
   title text not null,
@@ -261,6 +313,13 @@ create table if not exists public.tasks (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Add department_id column to tasks table if it doesn't exist
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_name = 'tasks' and column_name = 'department_id') then
+    alter table public.tasks add column department_id uuid null references public.departments(id) on delete set null;
+  end if;
+end $$;
 
 create table if not exists public.task_dependencies (
   id uuid primary key default gen_random_uuid(),
@@ -597,8 +656,27 @@ begin
 end;
 $$;
 
+create or replace function public.before_task_set_department()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Set department_id from the associated project's department_id
+  if new.project_id is not null then
+    select department_id into new.department_id
+    from public.projects
+    where id = new.project_id;
+  end if;
+  
+  return new;
+end;
+$$;
+
+drop function if exists public.ensure_user_tenant(text);
 create or replace function public.ensure_user_tenant(p_tenant_slug text default null)
-returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key text)
+returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key text, department_id uuid, department_name text)
 language plpgsql
 security definer
 set search_path = public
@@ -609,6 +687,7 @@ declare
   v_slug_base text;
   v_slug text;
   v_tenant_id uuid;
+  v_department_id uuid;
 begin
   v_app_user_id := public.ensure_app_user();
 
@@ -616,10 +695,12 @@ begin
 
   if p_tenant_slug is not null then
     return query
-    select t.id, t.slug, t.name, r.key
+    select t.id, t.slug, t.name, r.key, d.id, d.name
     from public.user_tenant_roles utr
     join public.tenants t on t.id = utr.tenant_id
     join public.roles r on r.id = utr.role_id
+    left join public.user_department_roles udr on udr.user_id = utr.user_id
+    left join public.departments d on d.id = udr.department_id and d.tenant_id = t.id
     where utr.user_id = v_app_user_id and utr.is_active = true and t.slug = p_tenant_slug
     limit 1;
     if found then
@@ -628,10 +709,12 @@ begin
   end if;
 
   return query
-  select t.id, t.slug, t.name, r.key
+  select t.id, t.slug, t.name, r.key, d.id, d.name
   from public.user_tenant_roles utr
   join public.tenants t on t.id = utr.tenant_id
   join public.roles r on r.id = utr.role_id
+  left join public.user_department_roles udr on udr.user_id = utr.user_id
+  left join public.departments d on d.id = udr.department_id and d.tenant_id = t.id
   where utr.user_id = v_app_user_id and utr.is_active = true
   order by utr.created_at asc
   limit 1;
@@ -651,14 +734,27 @@ begin
 
   select id into v_tenant_id from public.tenants where slug = v_slug limit 1;
 
+  -- Create default department for new workspace
+  insert into public.departments (tenant_id, name, slug)
+  values (v_tenant_id, 'General', 'general')
+  on conflict (tenant_id, slug) do update set updated_at = now()
+  returning id into v_department_id;
+
   insert into public.user_tenant_roles (tenant_id, user_id, role_id)
   select v_tenant_id, v_app_user_id, r.id
   from public.roles r where r.key = 'owner' and r.tenant_id is null
   on conflict on constraint user_tenant_roles_unique
   do update set role_id = excluded.role_id, is_active = true, updated_at = now();
 
+  -- Assign user to default department with default role
+  insert into public.user_department_roles (user_id, department_id, department_role_id)
+  select v_app_user_id, v_department_id, dr.id
+  from public.department_roles dr
+  where dr.tenant_id = v_tenant_id and dr.key = 'member'
+  on conflict (user_id, department_id) do update set department_role_id = excluded.department_role_id, updated_at = now();
+
   return query
-  select t.id, t.slug, t.name, 'owner'::text from public.tenants t where t.id = v_tenant_id;
+  select t.id, t.slug, t.name, 'owner'::text, v_department_id, 'General'::text from public.tenants t where t.id = v_tenant_id;
 end;
 $$;
 
@@ -755,7 +851,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','department_roles','user_department_roles','department_permissions']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -793,6 +889,10 @@ drop trigger if exists trg_tasks_tenant_guard on public.tasks;
 create trigger trg_tasks_tenant_guard before insert or update on public.tasks
 for each row execute function public.enforce_linked_tenant_consistency();
 
+drop trigger if exists trg_tasks_set_department on public.tasks;
+create trigger trg_tasks_set_department before insert or update on public.tasks
+for each row execute function public.before_task_set_department();
+
 drop trigger if exists trg_task_dependencies_tenant_guard on public.task_dependencies;
 create trigger trg_task_dependencies_tenant_guard before insert or update on public.task_dependencies
 for each row execute function public.enforce_linked_tenant_consistency();
@@ -815,6 +915,11 @@ for each row execute function public.after_task_write_sync_ticket();
 create index if not exists idx_user_tenant_roles_tenant on public.user_tenant_roles(tenant_id, is_active);
 create index if not exists idx_user_tenant_roles_user on public.user_tenant_roles(user_id, is_active);
 create index if not exists idx_tenant_invites_tenant_status on public.tenant_invites(tenant_id, status, created_at desc);
+create index if not exists idx_departments_tenant on public.departments(tenant_id);
+create index if not exists idx_department_roles_tenant on public.department_roles(tenant_id);
+create index if not exists idx_user_department_roles_user on public.user_department_roles(user_id);
+create index if not exists idx_user_department_roles_department on public.user_department_roles(department_id);
+create index if not exists idx_department_permissions_tenant_role on public.department_permissions(tenant_id, department_role_id);
 create index if not exists idx_projects_tenant_status on public.projects(tenant_id, status, created_at desc);
 create index if not exists idx_project_members_project_user on public.project_members(project_id, user_id, is_active);
 create index if not exists idx_tickets_tenant_project_status on public.tickets(tenant_id, project_id, status, created_at desc);
@@ -835,6 +940,19 @@ values
   ('client', 'Client')
 on conflict (tenant_id, key) do nothing;
 
+-- Seed Department Roles
+insert into public.department_roles (tenant_id, key, label)
+select t.id, dr.key, dr.label
+from (
+  select null::uuid as tenant_id, 'manager' as key, 'Manager' as label
+  union all
+  select null::uuid as tenant_id, 'lead' as key, 'Lead' as label
+  union all
+  select null::uuid as tenant_id, 'member' as key, 'Member' as label
+) dr
+cross join public.tenants t
+on conflict (tenant_id, key) do nothing;
+
 -- 4. Seed the Modules
 insert into public.modules (key, label) values
   ('dashboard', 'Dashboard'),
@@ -845,6 +963,7 @@ insert into public.modules (key, label) values
   ('tasks', 'Tasks'),
   ('todos', 'Todos'),
   ('users', 'User Management'),
+  ('departments', 'Departments'),
   ('settings', 'Settings'),
   ('rbac', 'Roles & Permissions')
 on conflict (key)
@@ -946,8 +1065,15 @@ using (public.is_tenant_member(tenant_id) and public.has_tenant_role(tenant_id, 
 drop policy if exists projects_select_scoped on public.projects;
 create policy projects_select_scoped on public.projects
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.user_department_roles udr
+      where udr.user_id = public.current_app_user_id()
+        and udr.department_id = projects.department_id
+    )
+  )
 );
 
 drop policy if exists projects_manage_admin on public.projects;
@@ -970,26 +1096,58 @@ with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 drop policy if exists tickets_select_scoped on public.tickets;
 create policy tickets_select_scoped on public.tickets
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, project_id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.projects p
+      join public.user_department_roles udr on udr.department_id = p.department_id
+      where p.id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
 );
 
 drop policy if exists tickets_insert_scoped on public.tickets;
 create policy tickets_insert_scoped on public.tickets
 for insert with check (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, project_id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.projects p
+      join public.user_department_roles udr on udr.department_id = p.department_id
+      where p.id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
 );
 
 drop policy if exists tickets_update_scoped on public.tickets;
 create policy tickets_update_scoped on public.tickets
 for update using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, project_id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.projects p
+      join public.user_department_roles udr on udr.department_id = p.department_id
+      where p.id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, project_id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.projects p
+      join public.user_department_roles udr on udr.department_id = p.department_id
+      where p.id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
 );
 
 drop policy if exists ticket_watchers_select_scoped on public.ticket_watchers;
@@ -1004,8 +1162,15 @@ with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 drop policy if exists tasks_select_scoped on public.tasks;
 create policy tasks_select_scoped on public.tasks
 for select using (
-  public.has_tenant_role(tenant_id, array['owner','admin','member']::text[])
-  or public.is_project_member(tenant_id, project_id)
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.user_department_roles udr
+      where udr.user_id = public.current_app_user_id()
+        and udr.department_id = tasks.department_id
+    )
+  )
 );
 
 drop policy if exists tasks_insert_admin on public.tasks;
@@ -1079,7 +1244,18 @@ alter table public.role_permissions enable row level security;
 
 drop policy if exists milestones_select_scoped on public.milestones;
 create policy milestones_select_scoped on public.milestones
-for select using (public.is_tenant_member(tenant_id));
+for select using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1 from public.projects p
+      join public.user_department_roles udr on udr.department_id = p.department_id
+      where p.id = milestones.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
 
 drop policy if exists milestones_manage_admin on public.milestones;
 create policy milestones_manage_admin on public.milestones
@@ -1142,6 +1318,68 @@ for select using (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists role_permissions_manage_admin on public.role_permissions;
 create policy role_permissions_manage_admin on public.role_permissions
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Departments RLS
+-- ----------
+alter table public.departments enable row level security;
+alter table public.department_roles enable row level security;
+alter table public.user_department_roles enable row level security;
+alter table public.department_permissions enable row level security;
+
+drop policy if exists departments_select_member on public.departments;
+create policy departments_select_member on public.departments
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists departments_manage_admin on public.departments;
+create policy departments_manage_admin on public.departments
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists department_roles_select_member on public.department_roles;
+create policy department_roles_select_member on public.department_roles
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists department_roles_manage_admin on public.department_roles;
+create policy department_roles_manage_admin on public.department_roles
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists user_department_roles_select_member on public.user_department_roles;
+create policy user_department_roles_select_member on public.user_department_roles
+for select using (
+  exists (
+    select 1 from public.departments d
+    where d.id = user_department_roles.department_id
+      and public.is_tenant_member(d.tenant_id)
+  )
+);
+
+drop policy if exists user_department_roles_manage_admin on public.user_department_roles;
+create policy user_department_roles_manage_admin on public.user_department_roles
+for all using (
+  exists (
+    select 1 from public.departments d
+    where d.id = user_department_roles.department_id
+      and public.has_tenant_role(d.tenant_id, array['owner','admin'])
+  )
+)
+with check (
+  exists (
+    select 1 from public.departments d
+    where d.id = user_department_roles.department_id
+      and public.has_tenant_role(d.tenant_id, array['owner','admin'])
+  )
+);
+
+drop policy if exists department_permissions_select_admin on public.department_permissions;
+create policy department_permissions_select_admin on public.department_permissions
+for select using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists department_permissions_manage_admin on public.department_permissions;
+create policy department_permissions_manage_admin on public.department_permissions
 for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
 with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 

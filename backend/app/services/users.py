@@ -47,12 +47,39 @@ class UserService:
     def list_users(supabase: Client, ctx: RequestContext, limit: int = 20, offset: int = 0):
         data = (
             supabase.table("user_tenant_roles")
-            .select("id,user_id,is_active,roles(key,label),users!user_tenant_roles_user_id_fkey(id,email,full_name,avatar_url)")
+            .select("id,user_id,is_active,roles(key,label),users!user_tenant_roles_user_id_fkey(id,email,full_name,avatar_url),user_department_roles(department_id,department_role_id,departments(id,name)),department_roles(key,label)")
             .eq("tenant_id", ctx.tenant_id)
             .range(offset, offset + limit - 1)
             .execute()
         )
-        return data.data or []
+        
+        # Transform response to include department info
+        users = []
+        if data.data:
+            for item in data.data:
+                user = item.get("users") or {}
+                user_dept_roles = item.get("user_department_roles") or []
+                dept_info = {}
+                if user_dept_roles:
+                    udr = user_dept_roles[0]  # Get first department role
+                    dept = udr.get("departments") or {}
+                    dept_info = {
+                        "department_id": udr.get("department_id"),
+                        "department_name": dept.get("name")
+                    }
+                
+                users.append({
+                    "id": user.get("id"),
+                    "email": user.get("email"),
+                    "full_name": user.get("full_name"),
+                    "avatar_url": user.get("avatar_url"),
+                    "is_active": item.get("is_active"),
+                    "role_key": item.get("roles", {}).get("key"),
+                    "role_label": item.get("roles", {}).get("label"),
+                    **dept_info
+                })
+        
+        return users
 
     @classmethod
     def create_user(cls, supabase: Client, payload: UserCreate, ctx: RequestContext, dbg: str = "no-debug-id"):

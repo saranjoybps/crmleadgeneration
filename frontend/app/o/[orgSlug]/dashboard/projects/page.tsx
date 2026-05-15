@@ -9,8 +9,7 @@ import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Modal } from "@/components/ui/Modal";
-import { Input } from "@/components/ui/Input";
+import { DepartmentSelector } from "@/components/DepartmentSelector";
 
 type ProjectsPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -251,14 +250,22 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
           <h1 className="text-3xl font-bold tracking-tight text-main">Projects</h1>
           <p className="text-muted">Manage your organization&apos;s projects and team members.</p>
         </div>
-        {projectsPermissions.can_create && (
-          <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`}>
-            <Button size="lg" className="gap-2">
-              <Plus className="h-5 w-5" />
-              New Project
-            </Button>
-          </Link>
-        )}
+        <div className="flex items-center gap-4">
+          <DepartmentSelector
+            orgSlug={orgSlug}
+            placeholder="Filter by department..."
+            showAllOption={true}
+            className="w-48"
+          />
+          {projectsPermissions.can_create && (
+            <Link href={`/o/${orgSlug}/dashboard/projects?modal=create`}>
+              <Button size="lg" className="gap-2">
+                <Plus className="h-5 w-5" />
+                New Project
+              </Button>
+            </Link>
+          )}
+        </div>
       </header>
 
       {query.error && (

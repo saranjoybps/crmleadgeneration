@@ -16,6 +16,29 @@ export type User = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  department_id?: string;
+  department_name?: string;
+};
+
+export type Department = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  tenant_id: string;
+  created_at: string;
+  member_count?: number;
+};
+
+export type DepartmentRole = "manager" | "lead" | "member";
+
+export type DepartmentMember = {
+  user_id: string;
+  user_email: string;
+  user_full_name: string | null;
+  department_role_key: string;
+  department_role_label: string;
+  joined_at: string;
 };
 
 export type OrganizationMember = {

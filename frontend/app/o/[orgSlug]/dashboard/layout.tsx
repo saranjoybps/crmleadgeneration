@@ -57,6 +57,14 @@ export default async function DashboardLayout({ children, params }: DashboardLay
 
   const avatarUrl = dbUser?.avatar_url;
 
+  // Fetch user's department information
+  const departmentResponse = await apiRequest<{
+    department_id: string | null;
+    department_name: string | null;
+  }>("/api/v1/auth/department", { orgSlug, cache: "no-store" });
+
+  const departmentName = departmentResponse.error ? undefined : departmentResponse.data?.department_name || undefined;
+
   return (
     <PermissionsProvider permissions={permissionsResponse.data || { role: { key: org.role, label: "" }, modules: [] }}>
       <main className="h-screen overflow-hidden">
@@ -97,6 +105,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                     role={org.role}
                     initial={profileInitial}
                     avatarUrl={avatarUrl}
+                    departmentName={departmentName}
                   />
                 </div>
               </div>

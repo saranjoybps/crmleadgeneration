@@ -10,13 +10,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { TicketComments } from "@/components/TicketComments";
-import { ProjectMilestoneSelector } from "@/components/ProjectMilestoneSelector";
-import { createClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
+import { DepartmentSelector } from "@/components/DepartmentSelector";
 
 type TicketsPageProps = {
   params: Promise<{ orgSlug: string }>;
-  searchParams: Promise<{ error?: string; success?: string; project_id?: string; modal?: "create" | "edit" | "delete"; ticket_id?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; project_id?: string; modal?: "create" | "edit" | "delete"; ticket_id?: string; department_id?: string }>;
 };
 
 type Milestone = { id: string; name: string; project_id: string };
@@ -159,7 +157,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   const [projectsRes, ticketsRes] = await Promise.all([
     apiRequest<Array<{ id: string; name: string }>>("/api/v1/projects", { orgSlug }),
     apiRequest<Array<{ id: string; title: string; type: string; status: string; project_id: string; milestone_id?: string; description?: string; start_date?: string; due_date?: string }>>(
-      `/api/v1/tickets${selectedProject ? `?project_id=${encodeURIComponent(selectedProject)}` : ""}`,
+      `/api/v1/tickets${selectedProject ? `?project_id=${encodeURIComponent(selectedProject)}` : ""}${query.department_id ? `${selectedProject ? '&' : '?'}department_id=${encodeURIComponent(query.department_id)}` : ""}`,
       { orgSlug }
     ),
   ]);
@@ -218,14 +216,22 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
           <h1 className="text-3xl font-bold tracking-tight text-main">Tickets</h1>
           <p className="text-muted">Track issues, feature requests, and support tickets.</p>
         </div>
-        {ticketsPermissions.can_create && (
-          <Link href={`/o/${orgSlug}/dashboard/tickets?modal=create`}>
-            <Button size="lg" className="gap-2">
-              <Plus className="h-5 w-5" />
-              Create Ticket
-            </Button>
-          </Link>
-        )}
+        <div className="flex items-center gap-4">
+          <DepartmentSelector
+            orgSlug={orgSlug}
+            placeholder="Filter by department..."
+            showAllOption={true}
+            className="w-48"
+          />
+          {ticketsPermissions.can_create && (
+            <Link href={`/o/${orgSlug}/dashboard/tickets?modal=create`}>
+              <Button size="lg" className="gap-2">
+                <Plus className="h-5 w-5" />
+                Create Ticket
+              </Button>
+            </Link>
+          )}
+        </div>
       </header>
 
       {query.error && (

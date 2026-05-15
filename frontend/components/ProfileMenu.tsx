@@ -9,9 +9,10 @@ type ProfileMenuProps = {
   role: string;
   initial: string;
   avatarUrl?: string;
+  departmentName?: string;
 };
 
-export function ProfileMenu({ email, role, initial, avatarUrl }: ProfileMenuProps) {
+export function ProfileMenu({ email, role, initial, avatarUrl, departmentName }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +48,9 @@ export function ProfileMenu({ email, role, initial, avatarUrl }: ProfileMenuProp
         <div className="absolute right-0 z-30 mt-2 w-64 rounded-xl border border-soft bg-white p-3 shadow-lg">
           <p className="truncate text-sm font-semibold text-main">{email}</p>
           <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted">{role}</p>
+          {departmentName && (
+            <p className="mt-1 text-xs text-violet-600 font-medium">{departmentName}</p>
+          )}
           <div className="mt-3 border-t border-soft pt-3">
             <form action={logout}>
               <button

@@ -6,6 +6,7 @@ import { User, Shield, Palette, Info, LogOut, Globe, Mail, Briefcase, Check, Use
 import { logout } from "@/app/actions/auth";
 import { ThemePreference } from "@/components/ThemePreference";
 import { RBACManager } from "@/components/RBACManager";
+import { DepartmentManager } from "@/components/DepartmentManager";
 import { canManageOrganizationUsers, getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
@@ -131,6 +132,7 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
     { id: "profile", label: "My Profile", icon: User },
     { id: "organization", label: "Organization", icon: Shield },
     ...(canManage ? [{ id: "rbac", label: "Roles & Permissions", icon: Users }] : []),
+    ...(canManage ? [{ id: "departments", label: "Departments", icon: Briefcase }] : []),
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "info", label: "System Info", icon: Info },
   ];
@@ -277,6 +279,23 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
              </div>
              <div className="p-8">
                 <RBACManager orgSlug={orgSlug} />
+             </div>
+           </Card>
+        )}
+
+        {activeTab === "departments" && (
+           <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
+             <div className="bg-slate-50 border-b border-soft px-8 py-6 flex items-center gap-4">
+                <div className="h-12 w-12 rounded-2xl bg-white border border-soft flex items-center justify-center shadow-sm">
+                  <Briefcase className="h-6 w-6 text-violet-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-main leading-none">Departments</h2>
+                  <p className="text-xs font-bold text-muted uppercase tracking-wider mt-1">Manage departments and team organization</p>
+                </div>
+             </div>
+             <div className="p-8">
+                <DepartmentManager orgSlug={orgSlug} />
              </div>
            </Card>
         )}

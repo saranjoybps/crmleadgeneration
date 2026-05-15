@@ -21,15 +21,27 @@ class TicketService:
         )
         return {x["project_id"] for x in (rows.data or [])}
 
+    @staticmethod
+    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
+        if ctx.role_key in {"owner", "admin"}:
+            return None
+        rows = (
+            supabase.table("user_department_roles")
+            .select("department_id")
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        return {x["department_id"] for x in (rows.data or [])}
+
     @classmethod
     def list_tickets(cls, supabase: Client, ctx: RequestContext, project_id: str | None = None, status: str | None = None, milestone_id: str | None = None):
         query = (
             supabase.table("tickets")
-            .select("id,tenant_id,project_id,milestone_id,title,description,type,status,priority,start_date,due_date,created_by,created_at,updated_at")
+            .select("id,tenant_id,project_id,milestone_id,title,description,type,status,priority,start_date,due_date,created_by,created_at,updated_at,projects(department_id)")
             .eq("tenant_id", ctx.tenant_id)
             .order("created_at", desc=True)
         )
-        allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
         if project_id:
             query = query.eq("project_id", project_id)
         if status:
@@ -38,15 +50,19 @@ class TicketService:
             query = query.eq("milestone_id", milestone_id)
         
         rows = query.execute().data or []
-        if allowed_project_ids is not None:
-            rows = [row for row in rows if row["project_id"] in allowed_project_ids]
+        
+        # Apply department-based filtering for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None:
+            rows = [row for row in rows if row.get("projects", {}).get("department_id") in allowed_department_ids]
+        
         return rows
 
     @classmethod
     def get_ticket(cls, supabase: Client, ticket_id: str, ctx: RequestContext):
         data = (
             supabase.table("tickets")
-            .select("*, tasks(*, task_assignees(user_id, users(full_name)))")
+            .select("*, tasks(*, task_assignees(user_id, users(full_name))), projects(department_id)")
             .eq("tenant_id", ctx.tenant_id)
             .eq("id", ticket_id)
             .maybe_single()
@@ -55,8 +71,9 @@ class TicketService:
         if not data.data:
             raise HTTPException(status_code=404, detail="Ticket not found")
         
-        allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
-        if allowed_project_ids is not None and data.data["project_id"] not in allowed_project_ids:
+        # Check department access for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None and data.data.get("projects", {}).get("department_id") not in allowed_department_ids:
             raise HTTPException(status_code=404, detail="Ticket not found")
         
         return data.data

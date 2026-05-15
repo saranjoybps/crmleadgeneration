@@ -5,35 +5,93 @@ from app.core.deps import RequestContext
 
 class DashboardService:
     @staticmethod
+    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
+        if ctx.role_key in {"owner", "admin"}:
+            return None
+        rows = (
+            supabase.table("user_department_roles")
+            .select("department_id")
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        return {x["department_id"] for x in (rows.data or [])}
+
+    @staticmethod
     def get_summary(supabase: Client, ctx: RequestContext):
         # This is a bit inefficient to do separate calls, 
         # but for now it's okay. In a real app we might use a view or specialized RPC.
         
-        projects_count = (
-            supabase.table("projects")
-            .select("id", count="exact")
-            .eq("tenant_id", ctx.tenant_id)
-            .execute()
-            .count
-        )
+        allowed_department_ids = DashboardService._get_accessible_department_ids(supabase, ctx)
         
-        tickets_count = (
-            supabase.table("tickets")
-            .select("id", count="exact")
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("status", "open")
-            .execute()
-            .count
-        )
-        
-        tasks_count = (
-            supabase.table("tasks")
-            .select("id", count="exact")
-            .eq("tenant_id", ctx.tenant_id)
-            .not_.eq("status", "closed")
-            .execute()
-            .count
-        )
+        if allowed_department_ids is not None:
+            # Filter projects by department for non-admin users
+            projects_count = (
+                supabase.table("projects")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .in_("department_id", list(allowed_department_ids))
+                .execute()
+                .count
+            )
+            
+            # Filter tickets by project department for non-admin users
+            tickets_count = (
+                supabase.table("tickets")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("status", "open")
+                .execute()
+            )
+            # Filter tickets based on project department
+            if tickets_count > 0:
+                ticket_rows = (
+                    supabase.table("tickets")
+                    .select("id, projects(department_id)")
+                    .eq("tenant_id", ctx.tenant_id)
+                    .eq("status", "open")
+                    .execute()
+                    .data or []
+                )
+                tickets_count = len([t for t in ticket_rows if t.get("projects", {}).get("department_id") in allowed_department_ids])
+            
+            # Filter tasks by department for non-admin users
+            tasks_count = (
+                supabase.table("tasks")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .not_.eq("status", "closed")
+                .in_("department_id", list(allowed_department_ids))
+                .execute()
+                .count
+            )
+        else:
+            # Admin/owner sees all
+            projects_count = (
+                supabase.table("projects")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .execute()
+                .count
+            )
+            
+            tickets_count = (
+                supabase.table("tickets")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("status", "open")
+                .execute()
+                .count
+            )
+            
+            tasks_count = (
+                supabase.table("tasks")
+                .select("id", count="exact")
+                .eq("tenant_id", ctx.tenant_id)
+                .not_.eq("status", "closed")
+                .execute()
+                .count
+            )
         
         users_count = (
             supabase.table("user_tenant_roles")

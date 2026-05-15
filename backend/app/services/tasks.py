@@ -22,6 +22,19 @@ class TaskService:
         )
         return {x["project_id"] for x in (rows.data or [])}
 
+    @staticmethod
+    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
+        if ctx.role_key in {"owner", "admin"}:
+            return None
+        rows = (
+            supabase.table("user_department_roles")
+            .select("department_id")
+            .eq("user_id", ctx.app_user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        return {x["department_id"] for x in (rows.data or [])}
+
     @classmethod
     def list_tasks(
         cls,
@@ -55,9 +68,10 @@ class TaskService:
             
         rows = res.data or []
         
-        allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
-        if allowed_project_ids is not None:
-            rows = [row for row in rows if row["project_id"] in allowed_project_ids]
+        # Apply department-based filtering for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None:
+            rows = [row for row in rows if row.get("department_id") in allowed_department_ids]
         
         # Filter by user_id if provided (tasks where this user is assigned)
         if user_id:
@@ -87,8 +101,9 @@ class TaskService:
         if not data.data:
             raise HTTPException(status_code=404, detail="Task not found")
         
-        allowed_project_ids = cls._get_accessible_project_ids(supabase, ctx)
-        if allowed_project_ids is not None and data.data["project_id"] not in allowed_project_ids:
+        # Check department access for non-admin users
+        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
+        if allowed_department_ids is not None and data.data.get("department_id") not in allowed_department_ids:
             raise HTTPException(status_code=404, detail="Task not found")
         
         return data.data

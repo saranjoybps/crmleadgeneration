@@ -27,6 +27,14 @@ def get_user_permissions(ctx: RequestContext = Depends(get_request_context)):
     return response(permissions)
 
 
+@router.get("/department")
+def get_user_department(ctx: RequestContext = Depends(get_request_context)):
+    return response({
+        "department_id": ctx.department_id,
+        "department_name": ctx.department_name
+    })
+
+
 @router.post("/invite")
 def invite_user(payload: InviteCreate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
     supabase = get_supabase_client()
