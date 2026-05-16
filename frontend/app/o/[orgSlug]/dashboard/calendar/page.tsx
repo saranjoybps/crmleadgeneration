@@ -15,7 +15,19 @@ export default async function CalendarPage({ params, searchParams }: {
 }) {
   const { orgSlug } = await params;
   const { month, year, department_id } = await searchParams;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
+  await getOrganizationContextOrRedirect(orgSlug);
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const calendarPerm = permissionsResponse.data?.modules.find((m) => m.key === "calendar")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+  if (!calendarPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view calendar.</p>;
+  }
   const { data: departments } = await apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug });
 
   const now = new Date();

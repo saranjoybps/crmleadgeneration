@@ -77,7 +77,19 @@ export default async function RoadmapPage({ params, searchParams }: {
   const { orgSlug } = await params;
   const query = await searchParams;
   const { project_id, department_id, modal, milestone_id } = query;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
+  await getOrganizationContextOrRedirect(orgSlug);
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const roadmapPermissions = permissionsResponse.data?.modules.find((m) => m.key === "roadmap")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+  if (!roadmapPermissions.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view roadmap.</p>;
+  }
   const { data: departments } = await apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug });
 
   // Fetch projects for the filter
@@ -112,7 +124,7 @@ export default async function RoadmapPage({ params, searchParams }: {
           <h1 className="text-3xl font-black tracking-tight text-main">Project Timeline</h1>
           <p className="mt-1 text-muted font-medium">Visualize your project milestones and task dependencies.</p>
         </div>
-        {(org.role === "owner" || org.role === "admin") && (
+        {roadmapPermissions.can_create && (
           <Link href={closeHrefWithParams("modal=create_milestone")}>
             <Button className="gap-2">
               <Plus className="h-5 w-5" />
@@ -363,7 +375,7 @@ export default async function RoadmapPage({ params, searchParams }: {
                <Link href={closeHref}>
                  <Button variant="outline">Close</Button>
                </Link>
-               {(org.role === "owner" || org.role === "admin") && (
+               {roadmapPermissions.can_edit && (
                  <Link href={closeHrefWithParams(`modal=edit_milestone&milestone_id=${selectedMilestone.id}`)}>
                    <Button>Edit Milestone</Button>
                  </Link>

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 
@@ -16,11 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
-        <Script
+        <script
           id="theme-script"
-          strategy="beforeInteractive"
-        >
-          {`
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `
             (function() {
               try {
                 var stored = localStorage.getItem("joy-theme");
@@ -30,8 +29,9 @@ export default function RootLayout({
                 document.documentElement.setAttribute("data-theme", resolved);
               } catch (e) {}
             })();
-          `}
-        </Script>
+          `,
+          }}
+        />
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

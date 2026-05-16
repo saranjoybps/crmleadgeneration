@@ -69,6 +69,12 @@ async function createTask(formData: FormData) {
   const parentTaskId = String(formData.get("parent_task_id") ?? "").trim();
   const assigneeIds = formData.getAll("assignee_user_ids").map((x) => String(x).trim()).filter(Boolean);
   const path = `/o/${orgSlug}/dashboard/tasks`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_create ?? false;
+  if (!canCreate) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create tasks.")}`);
 
   const { error } = await apiRequest("/api/v1/tasks/ticket/" + encodeURIComponent(ticketId), {
     method: "POST",
@@ -101,6 +107,12 @@ async function updateTask(formData: FormData) {
   const startDate = String(formData.get("start_date") ?? "").trim();
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tasks`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
+  if (!canEdit) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit tasks.")}`);
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
@@ -187,6 +199,12 @@ async function deleteTask(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const taskId = String(formData.get("task_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tasks`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canDelete = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_delete ?? false;
+  if (!canDelete) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete tasks.")}`);
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "DELETE",
@@ -201,8 +219,20 @@ async function deleteTask(formData: FormData) {
 export default async function TasksPage({ params, searchParams }: TasksPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
-  const canManage = org.role === "owner" || org.role === "admin";
+  await getOrganizationContextOrRedirect(orgSlug);
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const tasksPerm = permissionsResponse.data?.modules.find((m) => m.key === "tasks")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+  if (!tasksPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view tasks.</p>;
+  }
+  const canManage = tasksPerm.can_edit;
 
   const taskQueryParams = new URLSearchParams();
   if (query.project_id) taskQueryParams.append("project_id", query.project_id);
@@ -296,7 +326,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
             </form>
           </div>
 
-          {canManage && (
+          {tasksPerm.can_create && (
             <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create`}>
               <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
                 <Plus className="h-5 w-5" />
@@ -324,7 +354,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
       <KanbanBoard 
         initialTasks={tasks} 
         orgSlug={orgSlug} 
-        canManage={canManage || org.role === "member"} 
+        canManage={tasksPerm.can_edit} 
         ticketTitleById={ticketTitleById}
         onStatusChange={onStatusChange}
       />
@@ -493,7 +523,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                     );
                   })}
                   
-                  {canManage && (
+                  {tasksPerm.can_edit && (
                     <form action={addDependency} className="flex gap-2 items-end pt-2">
                       <input type="hidden" name="organization_slug" value={orgSlug} />
                       <input type="hidden" name="task_id" value={selectedTask.id} />
@@ -587,7 +617,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
                   </div>
                 </div>
 
-                {canManage && (
+                {tasksPerm.can_delete && (
                   <div className="pt-4 border-t border-soft/50">
                     <Link href={`/o/${orgSlug}/dashboard/tasks?modal=delete&task_id=${selectedTask.id}`}>
                       <Button variant="danger" className="w-full gap-2 py-2.5 text-[11px] font-bold bg-white hover:bg-red-50 border-red-100 text-red-600 shadow-none">

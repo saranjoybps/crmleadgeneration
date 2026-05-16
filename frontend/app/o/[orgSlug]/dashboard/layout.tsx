@@ -40,13 +40,18 @@ export default async function DashboardLayout({ children, params }: DashboardLay
     }>;
   }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
 
-  const permissionModules = permissionsResponse.error ? undefined : permissionsResponse.data?.modules;
-  const allowedModuleKeys = permissionModules
-    ? new Set(permissionModules.filter((module) => module.permissions.can_view).map((module) => module.key))
-    : undefined;
-
-  // Console log permissions for debugging
-  console.log("User Permissions:", permissionsResponse);
+  const permissionModules = permissionsResponse.data?.modules ?? [];
+  const allowedModuleKeys = new Set(
+    permissionModules.filter((module) => module.permissions.can_view).map((module) => module.key),
+  );
+  const dashboardModule = permissionModules.find((module) => module.key === "dashboard");
+  console.log("[UI][LAYOUT][PERMS]", {
+    orgSlug,
+    apiError: permissionsResponse.error ?? null,
+    role: permissionsResponse.data?.role?.key ?? org.role,
+    dashboard: dashboardModule?.permissions ?? null,
+    visibleModules: Array.from(allowedModuleKeys),
+  });
 
   // Fetch avatar from users table as requested
   const { data: dbUser } = await supabase

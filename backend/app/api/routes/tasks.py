@@ -20,7 +20,7 @@ def list_tasks(
     user_id: str | None = Query(default=None),
     ctx: RequestContext = Depends(require_module_permission("tasks", "view")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     tasks = TaskService.list_tasks(
         supabase,
         ctx,
@@ -36,55 +36,55 @@ def list_tasks(
 
 @router.get("/{task_id}")
 def get_task(task_id: str, ctx: RequestContext = Depends(require_module_permission("tasks", "view"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     task = TaskService.get_task(supabase, task_id, ctx)
     return response(task)
 
 
 @router.post("/ticket/{ticket_id}")
 def create_task(ticket_id: str, payload: TaskCreate, ctx: RequestContext = Depends(require_module_permission("tasks", "create"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     task = TaskService.create_task(supabase, ticket_id, payload, ctx)
     return response(task)
 
 
 @router.patch("/{task_id}")
 def update_task(task_id: str, payload: TaskUpdate, ctx: RequestContext = Depends(require_module_permission("tasks", "edit"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     task = TaskService.update_task(supabase, task_id, payload, ctx)
     return response(task)
 
 
 @router.post("/{task_id}/assignees")
 def update_task_assignees(task_id: str, payload: TaskAssigneesUpdate, ctx: RequestContext = Depends(require_module_permission("tasks", "edit"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     assignees = TaskService.update_task_assignees(supabase, task_id, payload, ctx)
     return response(assignees)
 
 
 @router.delete("/{task_id}")
 def delete_task(task_id: str, ctx: RequestContext = Depends(require_module_permission("tasks", "delete"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     task = TaskService.delete_task(supabase, task_id, ctx)
     return response(task)
 
 
 @router.get("/{task_id}/dependencies")
 def list_dependencies(task_id: str, ctx: RequestContext = Depends(require_module_permission("tasks", "view"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     deps = TaskDependencyService.list_dependencies(supabase, task_id, ctx)
     return response(deps)
 
 
 @router.post("/{task_id}/dependencies")
 def create_dependency(task_id: str, payload: TaskDependencyCreate, ctx: RequestContext = Depends(require_module_permission("tasks", "edit"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     dep = TaskDependencyService.create_dependency(supabase, task_id, payload, ctx)
     return response(dep)
 
 
 @router.delete("/{task_id}/dependencies/{depends_on_task_id}")
 def delete_dependency(task_id: str, depends_on_task_id: str, ctx: RequestContext = Depends(require_module_permission("tasks", "edit"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     res = TaskDependencyService.delete_dependency(supabase, task_id, depends_on_task_id, ctx)
     return response(res)

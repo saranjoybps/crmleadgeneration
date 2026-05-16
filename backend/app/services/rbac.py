@@ -1,11 +1,20 @@
 from fastapi import HTTPException
 from supabase import Client
+import logging
 
 from app.core.deps import RequestContext
 from app.schemas.rbac import RoleCreate, RoleUpdate, ModuleCreate, PermissionUpdate
 
+logger = logging.getLogger("joycrm.rbac")
+
 
 class RBACService:
+    RESERVED_ROLE_KEYS = {"owner", "admin", "member", "client"}
+
+    @staticmethod
+    def _no_permissions() -> dict:
+        return {"can_view": False, "can_create": False, "can_edit": False, "can_delete": False}
+
     @staticmethod
     def _list_tenant_and_system_roles(supabase: Client, tenant_id: str):
         res = (
@@ -188,10 +197,10 @@ class RBACService:
                     None
                 )
                 role_perms["permissions"][module["key"]] = {
-                    "can_view": perm["can_view"] if perm else False,
-                    "can_create": perm["can_create"] if perm else False,
-                    "can_edit": perm["can_edit"] if perm else False,
-                    "can_delete": perm["can_delete"] if perm else False,
+                    "can_view": True if role["key"] == "owner" else (perm["can_view"] if perm else False),
+                    "can_create": True if role["key"] == "owner" else (perm["can_create"] if perm else False),
+                    "can_edit": True if role["key"] == "owner" else (perm["can_edit"] if perm else False),
+                    "can_delete": True if role["key"] == "owner" else (perm["can_delete"] if perm else False),
                 }
             role_permissions.append(role_perms)
 
@@ -226,6 +235,14 @@ class RBACService:
         role = (role_res.data or [None])[0]
         if not role:
             raise HTTPException(status_code=404, detail="Role not found")
+        logger.info(
+            "[RBAC][PERMS] tenant_id=%s app_user_id=%s ctx_role=%s assigned_role_id=%s assigned_role_key=%s",
+            ctx.tenant_id,
+            ctx.app_user_id,
+            ctx.role_key,
+            role_assignment["role_id"],
+            role.get("key"),
+        )
 
         modules_res = (
             supabase.table("modules")
@@ -254,43 +271,68 @@ class RBACService:
                 ],
             }
 
-        permissions_res = (
-            supabase.table("role_permissions")
-            .select("module_id, can_view, can_create, can_edit, can_delete")
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("role_id", role["id"])
-            .execute()
+        # IMPORTANT: do not read role_permissions directly here for non-owner users.
+        # RLS on role_permissions allows direct select for owner/admin only, which makes
+        # non-admin users appear to have zero permissions even when configured.
+        # Use the has_module_permission RPC (same source of truth used by guards).
+        permissions_by_module_key: dict[str, dict] = {}
+        for module in modules:
+            module_key = module["key"]
+            can_view = bool(supabase.rpc(
+                "has_module_permission",
+                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "view"},
+            ).execute().data)
+            can_create = bool(supabase.rpc(
+                "has_module_permission",
+                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "create"},
+            ).execute().data)
+            can_edit = bool(supabase.rpc(
+                "has_module_permission",
+                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "edit"},
+            ).execute().data)
+            can_delete = bool(supabase.rpc(
+                "has_module_permission",
+                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "delete"},
+            ).execute().data)
+            permissions_by_module_key[module_key] = {
+                "can_view": can_view,
+                "can_create": can_create,
+                "can_edit": can_edit,
+                "can_delete": can_delete,
+            }
+
+        logger.info(
+            "[RBAC][PERMS] tenant_id=%s role_id=%s role_key=%s modules=%s dashboard_permission=%s source=rpc",
+            ctx.tenant_id,
+            role["id"],
+            role["key"],
+            len(modules),
+            permissions_by_module_key.get("dashboard"),
         )
-        permissions = permissions_res.data or []
 
         return {
             "role": role,
-            "modules": [
-                {
-                    "key": module["key"],
-                    "label": module["label"],
-                    "permissions": {
-                        "can_view": next((p["can_view"] for p in permissions if p["module_id"] == module["id"]), False),
-                        "can_create": next((p["can_create"] for p in permissions if p["module_id"] == module["id"]), False),
-                        "can_edit": next((p["can_edit"] for p in permissions if p["module_id"] == module["id"]), False),
-                        "can_delete": next((p["can_delete"] for p in permissions if p["module_id"] == module["id"]), False),
-                    },
-                }
-                for module in modules
-            ],
+            "modules": [{
+                "key": module["key"],
+                "label": module["label"],
+                "permissions": permissions_by_module_key.get(module["key"], RBACService._no_permissions()),
+            } for module in modules],
         }
 
     @staticmethod
     def update_permissions(supabase: Client, payload: PermissionUpdate, ctx: RequestContext):
-        # Verify role belongs to tenant
+        # Verify role belongs to tenant or is a global/system role
         role_check = (
             supabase.table("roles")
-            .select("id")
-            .eq("tenant_id", ctx.tenant_id)
+            .select("id,tenant_id,key")
             .eq("id", payload.role_id)
             .execute()
         )
         if not role_check.data:
+            raise HTTPException(status_code=404, detail="Role not found")
+        role_row = role_check.data[0]
+        role_tenant_id = role_row.get("tenant_id")
+        if role_tenant_id is not None and str(role_tenant_id) != str(ctx.tenant_id):
             raise HTTPException(status_code=404, detail="Role not found")
 
         # Get module
@@ -305,46 +347,78 @@ class RBACService:
 
         module_id = module_check.data[0]["id"]
 
-        # Upsert permission
-        permission_data = {
-            "tenant_id": ctx.tenant_id,
-            "role_id": payload.role_id,
-            "module_id": module_id,
-        }
+        role_ids_to_update = [payload.role_id]
+        role_key = str(role_row.get("key") or "")
+        if role_key in RBACService.RESERVED_ROLE_KEYS:
+            sibling_roles_res = (
+                supabase.table("roles")
+                .select("id")
+                .eq("key", role_key)
+                .or_(f"tenant_id.eq.{ctx.tenant_id},tenant_id.is.null")
+                .execute()
+            )
+            sibling_role_ids = [r["id"] for r in (sibling_roles_res.data or []) if r.get("id")]
+            if sibling_role_ids:
+                role_ids_to_update = sibling_role_ids
 
         # Get existing permission or defaults
         existing = (
             supabase.table("role_permissions")
-            .select("can_view, can_create, can_edit, can_delete")
+            .select("role_id, can_view, can_create, can_edit, can_delete")
             .eq("tenant_id", ctx.tenant_id)
-            .eq("role_id", payload.role_id)
+            .in_("role_id", role_ids_to_update)
             .eq("module_id", module_id)
             .execute()
         )
-
-        current = existing.data[0] if existing.data else {
-            "can_view": False,
-            "can_create": False,
-            "can_edit": False,
-            "can_delete": False
-        }
+        existing_by_role_id = {row["role_id"]: row for row in (existing.data or [])}
 
         # Update with provided values
-        if payload.can_view is not None:
-            current["can_view"] = payload.can_view
-        if payload.can_create is not None:
-            current["can_create"] = payload.can_create
-        if payload.can_edit is not None:
-            current["can_edit"] = payload.can_edit
-        if payload.can_delete is not None:
-            current["can_delete"] = payload.can_delete
+        upsert_rows = []
+        for role_id in role_ids_to_update:
+            current = existing_by_role_id.get(role_id, {
+                "can_view": False,
+                "can_create": False,
+                "can_edit": False,
+                "can_delete": False,
+            })
+            if payload.can_view is not None:
+                current["can_view"] = payload.can_view
+            if payload.can_create is not None:
+                current["can_create"] = payload.can_create
+            if payload.can_edit is not None:
+                current["can_edit"] = payload.can_edit
+            if payload.can_delete is not None:
+                current["can_delete"] = payload.can_delete
 
-        permission_data.update(current)
+            upsert_rows.append({
+                "tenant_id": ctx.tenant_id,
+                "role_id": role_id,
+                "module_id": module_id,
+                "can_view": current["can_view"],
+                "can_create": current["can_create"],
+                "can_edit": current["can_edit"],
+                "can_delete": current["can_delete"],
+            })
+
+        logger.info(
+            "[RBAC][UPDATE_PERMS] tenant_id=%s role_key=%s source_role_id=%s target_role_ids=%s module_key=%s payload=%s",
+            ctx.tenant_id,
+            role_key,
+            payload.role_id,
+            role_ids_to_update,
+            payload.module_key,
+            {
+                "can_view": payload.can_view,
+                "can_create": payload.can_create,
+                "can_edit": payload.can_edit,
+                "can_delete": payload.can_delete,
+            },
+        )
 
         upserted = (
             supabase.table("role_permissions")
-            .upsert(permission_data, on_conflict="tenant_id,role_id,module_id")
+            .upsert(upsert_rows, on_conflict="tenant_id,role_id,module_id")
             .execute()
         )
 
-        return upserted.data[0] if upserted.data else None
+        return (upserted.data or [None])[0]

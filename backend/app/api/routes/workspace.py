@@ -17,6 +17,6 @@ def workspace_me(ctx: RequestContext = Depends(get_request_context)):
 
 @router.patch("")
 def update_workspace(payload: WorkspaceUpdate, ctx: RequestContext = Depends(require_roles("owner", "admin"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     data = WorkspaceService.update_workspace(supabase, payload, ctx)
     return response(data)

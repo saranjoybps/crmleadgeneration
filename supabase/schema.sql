@@ -215,6 +215,145 @@ create table if not exists public.tenant_invites (
   constraint tenant_invites_status_valid check (status in ('pending', 'accepted', 'revoked', 'expired'))
 );
 
+-- Normalize historical duplicate roles after dependent tables exist.
+do $$
+begin
+  with ranked as (
+    select
+      id,
+      tenant_id,
+      key,
+      row_number() over (partition by tenant_id, key order by created_at asc, id asc) as rn,
+      first_value(id) over (partition by tenant_id, key order by created_at asc, id asc) as keep_id
+    from public.roles
+  ),
+  dupes as (
+    select id, keep_id
+    from ranked
+    where rn > 1
+  )
+  update public.user_tenant_roles utr
+  set role_id = d.keep_id
+  from dupes d
+  where utr.role_id = d.id;
+
+  with ranked as (
+    select
+      id,
+      tenant_id,
+      key,
+      row_number() over (partition by tenant_id, key order by created_at asc, id asc) as rn,
+      first_value(id) over (partition by tenant_id, key order by created_at asc, id asc) as keep_id
+    from public.roles
+  ),
+  dupes as (
+    select id, keep_id
+    from ranked
+    where rn > 1
+  )
+  update public.tenant_invites ti
+  set role_id = d.keep_id
+  from dupes d
+  where ti.role_id = d.id;
+
+  with ranked as (
+    select
+      id,
+      tenant_id,
+      key,
+      row_number() over (partition by tenant_id, key order by created_at asc, id asc) as rn,
+      first_value(id) over (partition by tenant_id, key order by created_at asc, id asc) as keep_id
+    from public.roles
+  ),
+  dupes as (
+    select id, keep_id
+    from ranked
+    where rn > 1
+  )
+  update public.role_permissions rp
+  set role_id = d.keep_id
+  from dupes d
+  where rp.role_id = d.id;
+
+  with ranked as (
+    select
+      id,
+      tenant_id,
+      key,
+      row_number() over (partition by tenant_id, key order by created_at asc, id asc) as rn
+    from public.roles
+  )
+  delete from public.roles r
+  using ranked x
+  where r.id = x.id and x.rn > 1;
+end $$;
+
+-- Prevent duplicate global roles (tenant_id is null)
+create unique index if not exists roles_global_key_unique
+on public.roles(key)
+where tenant_id is null;
+
+-- Migrate tenant-scoped copies of reserved system roles to global roles.
+-- This prevents UI duplicates like two "Owner" rows (global + tenant copy).
+do $$
+begin
+  -- Remap user role links.
+  update public.user_tenant_roles utr
+  set role_id = g.id
+  from public.roles t
+  join public.roles g
+    on g.tenant_id is null
+   and g.key = t.key
+  where utr.role_id = t.id
+    and t.tenant_id is not null
+    and t.key in ('owner', 'admin', 'member', 'client');
+
+  -- Remap pending invite links.
+  update public.tenant_invites ti
+  set role_id = g.id
+  from public.roles t
+  join public.roles g
+    on g.tenant_id is null
+   and g.key = t.key
+  where ti.role_id = t.id
+    and t.tenant_id is not null
+    and t.key in ('owner', 'admin', 'member', 'client');
+
+  -- Remap role permission links.
+  update public.role_permissions rp
+  set role_id = g.id
+  from public.roles t
+  join public.roles g
+    on g.tenant_id is null
+   and g.key = t.key
+  where rp.role_id = t.id
+    and t.tenant_id is not null
+    and t.key in ('owner', 'admin', 'member', 'client');
+
+  -- Remove tenant-scoped reserved-key roles after remapping.
+  delete from public.roles r
+  where r.tenant_id is not null
+    and r.key in ('owner', 'admin', 'member', 'client');
+end $$;
+
+-- Optional guardrail: prevent tenant-scoped roles from reusing reserved system keys.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'roles_no_reserved_tenant_keys'
+      and conrelid = 'public.roles'::regclass
+  ) then
+    alter table public.roles
+      add constraint roles_no_reserved_tenant_keys
+      check (
+        tenant_id is null
+        or key not in ('owner', 'admin', 'member', 'client')
+      );
+  end if;
+end $$;
+
 create table if not exists public.milestones (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -671,6 +810,7 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+#variable_conflict use_variable
 declare
   v_app_user_id uuid;
   v_email text;
@@ -685,7 +825,13 @@ begin
 
   if p_tenant_slug is not null then
     return query
-    select t.id, t.slug, t.name, r.key, d.id, d.name
+    select
+      t.id as tenant_id,
+      t.slug as tenant_slug,
+      t.name as tenant_name,
+      r.key as role_key,
+      d.id as department_id,
+      d.name as department_name
     from public.user_tenant_roles utr
     join public.tenants t on t.id = utr.tenant_id
     join public.roles r on r.id = utr.role_id
@@ -699,7 +845,13 @@ begin
   end if;
 
   return query
-  select t.id, t.slug, t.name, r.key, d.id, d.name
+  select
+    t.id as tenant_id,
+    t.slug as tenant_slug,
+    t.name as tenant_name,
+    r.key as role_key,
+    d.id as department_id,
+    d.name as department_name
   from public.user_tenant_roles utr
   join public.tenants t on t.id = utr.tenant_id
   join public.roles r on r.id = utr.role_id
@@ -742,7 +894,15 @@ begin
   on conflict (user_id, department_id) do update set updated_at = now();
 
   return query
-  select t.id, t.slug, t.name, 'owner'::text, v_department_id, 'General'::text from public.tenants t where t.id = v_tenant_id;
+  select
+    t.id as tenant_id,
+    t.slug as tenant_slug,
+    t.name as tenant_name,
+    'owner'::text as role_key,
+    v_department_id as department_id,
+    'General'::text as department_name
+  from public.tenants t
+  where t.id = v_tenant_id;
 end;
 $$;
 
@@ -924,7 +1084,8 @@ values
   ('admin', 'Admin'),
   ('member', 'Member'),
   ('client', 'Client')
-on conflict (tenant_id, key) do nothing;
+on conflict (key) where (tenant_id is null)
+do update set label = excluded.label;
 
 -- 4. Seed the Modules
 insert into public.modules (key, label) values
@@ -1246,7 +1407,7 @@ with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 drop policy if exists todos_select_scoped on public.todos;
 create policy todos_select_scoped on public.todos
-for select using (public.has_tenant_role(tenant_id, array['owner','admin','member']));
+for select using (public.has_tenant_role(tenant_id, array['owner','admin','member','client']));
 
 drop policy if exists todos_insert_scoped on public.todos;
 create policy todos_insert_scoped on public.todos
@@ -1395,6 +1556,7 @@ drop policy if exists projects_select_scoped on public.projects;
 create policy projects_select_scoped on public.projects
 for select using (
   public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or public.has_tenant_role(tenant_id, array['client']::text[])
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
@@ -1411,6 +1573,7 @@ drop policy if exists tickets_select_scoped on public.tickets;
 create policy tickets_select_scoped on public.tickets
 for select using (
   public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or public.has_tenant_role(tenant_id, array['client']::text[])
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
@@ -1472,6 +1635,7 @@ drop policy if exists tasks_select_scoped on public.tasks;
 create policy tasks_select_scoped on public.tasks
 for select using (
   public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or public.has_tenant_role(tenant_id, array['client']::text[])
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (
@@ -1488,6 +1652,7 @@ drop policy if exists milestones_select_scoped on public.milestones;
 create policy milestones_select_scoped on public.milestones
 for select using (
   public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or public.has_tenant_role(tenant_id, array['client']::text[])
   or (
     public.has_tenant_role(tenant_id, array['member']::text[])
     and exists (

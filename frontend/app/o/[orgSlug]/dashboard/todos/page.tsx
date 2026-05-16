@@ -31,6 +31,12 @@ async function createTodo(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/todos`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "todos")?.permissions.can_create ?? false;
+  if (!canCreate) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create todos.")}`);
 
   const { error } = await apiRequest("/api/v1/todos", {
     method: "POST",
@@ -56,6 +62,12 @@ async function updateTodo(formData: FormData) {
   const dueDate = String(formData.get("due_date") ?? "").trim();
   const isCompleted = formData.get("is_completed") === "on";
   const path = `/o/${orgSlug}/dashboard/todos`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "todos")?.permissions.can_edit ?? false;
+  if (!canEdit) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit todos.")}`);
 
   const { error } = await apiRequest(`/api/v1/todos/${encodeURIComponent(todoId)}`, {
     method: "PATCH",
@@ -75,6 +87,12 @@ async function updateTodo(formData: FormData) {
 
 async function toggleTodo(orgSlug: string, todoId: string, currentStatus: boolean) {
   "use server";
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "todos")?.permissions.can_edit ?? false;
+  if (!canEdit) return;
   const { error } = await apiRequest(`/api/v1/todos/${encodeURIComponent(todoId)}`, {
     method: "PATCH",
     orgSlug,
@@ -88,6 +106,12 @@ async function deleteTodo(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const todoId = String(formData.get("todo_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/todos`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canDelete = permsRes.data?.modules.find((m) => m.key === "todos")?.permissions.can_delete ?? false;
+  if (!canDelete) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete todos.")}`);
 
   const { error } = await apiRequest(`/api/v1/todos/${encodeURIComponent(todoId)}`, {
     method: "DELETE",
@@ -102,7 +126,19 @@ async function deleteTodo(formData: FormData) {
 export default async function TodosPage({ params, searchParams }: TodosPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
+  await getOrganizationContextOrRedirect(orgSlug);
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const todosPerm = permissionsResponse.data?.modules.find((m) => m.key === "todos")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+  if (!todosPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view todos.</p>;
+  }
 
   const filter = query.filter || "all";
   let apiPath = "/api/v1/todos";
@@ -136,12 +172,14 @@ export default async function TodosPage({ params, searchParams }: TodosPageProps
             </Link>
           </div>
 
-          <Link href={`/o/${orgSlug}/dashboard/todos?modal=create`}>
-            <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
-              <Plus className="h-5 w-5" />
-              Add Todo
-            </Button>
-          </Link>
+          {todosPerm.can_create && (
+            <Link href={`/o/${orgSlug}/dashboard/todos?modal=create`}>
+              <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
+                <Plus className="h-5 w-5" />
+                Add Todo
+              </Button>
+            </Link>
+          )}
         </div>
       </header>
 
@@ -167,26 +205,38 @@ export default async function TodosPage({ params, searchParams }: TodosPageProps
             </div>
             <p className="text-lg font-medium">No todos found</p>
             <p className="text-sm mt-1 mb-6">Start by adding a new todo to your list.</p>
-            <Link href={`/o/${orgSlug}/dashboard/todos?modal=create`}>
-              <Button variant="outline">Add your first todo</Button>
-            </Link>
+            {todosPerm.can_create && (
+              <Link href={`/o/${orgSlug}/dashboard/todos?modal=create`}>
+                <Button variant="outline">Add your first todo</Button>
+              </Link>
+            )}
           </Card>
         ) : (
           todos?.map((todo) => (
             <Card key={todo.id} className={cn("group p-4 transition-all hover:border-violet-300", todo.is_completed && "bg-slate-50/50 opacity-75")}>
               <div className="flex items-center gap-4">
-                <form action={async () => {
-                  "use server";
-                  await toggleTodo(orgSlug, todo.id, todo.is_completed);
-                }}>
-                  <button type="submit" className="focus:outline-none">
+                {todosPerm.can_edit ? (
+                  <form action={async () => {
+                    "use server";
+                    await toggleTodo(orgSlug, todo.id, todo.is_completed);
+                  }}>
+                    <button type="submit" className="focus:outline-none">
+                      {todo.is_completed ? (
+                        <CheckCircle2 className="h-6 w-6 text-emerald-500 fill-emerald-50" />
+                      ) : (
+                        <Circle className="h-6 w-6 text-slate-300 hover:text-violet-500" />
+                      )}
+                    </button>
+                  </form>
+                ) : (
+                  <div>
                     {todo.is_completed ? (
                       <CheckCircle2 className="h-6 w-6 text-emerald-500 fill-emerald-50" />
                     ) : (
-                      <Circle className="h-6 w-6 text-slate-300 hover:text-violet-500" />
+                      <Circle className="h-6 w-6 text-slate-300" />
                     )}
-                  </button>
-                </form>
+                  </div>
+                )}
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3">
@@ -206,16 +256,20 @@ export default async function TodosPage({ params, searchParams }: TodosPageProps
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Link href={`/o/${orgSlug}/dashboard/todos?modal=edit&todo_id=${todo.id}`}>
-                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-xl">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Link href={`/o/${orgSlug}/dashboard/todos?modal=delete&todo_id=${todo.id}`}>
-                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-xl hover:bg-red-50 hover:text-red-600">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </Link>
+                  {todosPerm.can_edit && (
+                    <Link href={`/o/${orgSlug}/dashboard/todos?modal=edit&todo_id=${todo.id}`}>
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-xl">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                  {todosPerm.can_delete && (
+                    <Link href={`/o/${orgSlug}/dashboard/todos?modal=delete&todo_id=${todo.id}`}>
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-xl hover:bg-red-50 hover:text-red-600">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </div>
             </Card>

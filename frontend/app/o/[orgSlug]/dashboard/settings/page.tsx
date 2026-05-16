@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
+import { apiRequest } from "@/lib/api-server";
 
 type SettingsPageProps = {
   params: Promise<{ orgSlug: string }>;
@@ -117,7 +118,23 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
   if (!user) redirect("/login");
 
   const org = await getOrganizationContextOrRedirect(orgSlug);
-  const canManage = canManageOrganizationUsers(org.role);
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const modules = permissionsResponse.data?.modules ?? [];
+  const mod = (key: string) =>
+    modules.find((m) => m.key === key)?.permissions ?? {
+      can_view: false,
+      can_create: false,
+      can_edit: false,
+      can_delete: false,
+    };
+  const settingsPerm = mod("settings");
+  const canViewSettings = settingsPerm.can_view;
+  const canManage = settingsPerm.can_edit;
 
   const [tenantRes, rolesRes] = await Promise.all([
     supabase.from("tenants").select("id,slug,name,contact_email,domain").eq("id", org.organization_id).maybeSingle(),
@@ -135,8 +152,8 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
   const tabs = [
     { id: "profile", label: "My Profile", icon: User },
     { id: "organization", label: "Organization", icon: Shield },
-    ...(canManage ? [{ id: "rbac", label: "Roles & Permissions", icon: Users }] : []),
-    ...(canManage ? [{ id: "departments", label: "Departments", icon: Briefcase }] : []),
+    ...(canViewSettings ? [{ id: "rbac", label: "Roles & Permissions", icon: Users }] : []),
+    ...(canViewSettings ? [{ id: "departments", label: "Departments", icon: Briefcase }] : []),
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "info", label: "System Info", icon: Info },
   ];
@@ -270,7 +287,7 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
            </Card>
         )}
 
-        {activeTab === "rbac" && (
+        {activeTab === "rbac" && canViewSettings && (
            <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
              <div className="bg-slate-50 border-b border-soft px-8 py-6 flex items-center gap-4">
                 <div className="h-12 w-12 rounded-2xl bg-white border border-soft flex items-center justify-center shadow-sm">
@@ -287,7 +304,7 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
            </Card>
         )}
 
-        {activeTab === "departments" && (
+        {activeTab === "departments" && canViewSettings && (
            <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
              <div className="bg-slate-50 border-b border-soft px-8 py-6 flex items-center gap-4">
                 <div className="h-12 w-12 rounded-2xl bg-white border border-soft flex items-center justify-center shadow-sm">

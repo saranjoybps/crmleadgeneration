@@ -8,6 +8,6 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/summary")
 def get_summary(ctx: RequestContext = Depends(require_module_permission("dashboard", "view"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     summary = DashboardService.get_summary(supabase, ctx)
     return response(summary)

@@ -6,7 +6,7 @@ from app.core.deps import RequestContext
 class DashboardService:
     @staticmethod
     def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
-        if ctx.role_key in {"owner", "admin"}:
+        if ctx.role_key in {"owner", "admin", "client"}:
             return None
         rows = (
             supabase.table("user_departments")

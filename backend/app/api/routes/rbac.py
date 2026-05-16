@@ -11,7 +11,7 @@ router = APIRouter(prefix="/rbac", tags=["rbac"])
 
 @router.get("/roles")
 def list_roles(ctx: RequestContext = Depends(require_roles("owner", "admin"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     roles = RBACService.list_roles(supabase, ctx)
     return response(roles)
 
@@ -21,7 +21,7 @@ def create_role(
     payload: RoleCreate,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     role = RBACService.create_role(supabase, payload, ctx)
     return response(role)
 
@@ -32,7 +32,7 @@ def update_role(
     payload: RoleUpdate,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     role = RBACService.update_role(supabase, role_id, payload, ctx)
     return response(role)
 
@@ -42,14 +42,14 @@ def delete_role(
     role_id: str,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     result = RBACService.delete_role(supabase, role_id, ctx)
     return response(result)
 
 
 @router.get("/modules")
 def list_modules(ctx: RequestContext = Depends(require_roles("owner", "admin"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     modules = RBACService.list_modules(supabase)
     return response(modules)
 
@@ -59,7 +59,7 @@ def create_module(
     payload: ModuleCreate,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     module = RBACService.create_module(supabase, payload)
     return response(module)
 
@@ -69,14 +69,14 @@ def delete_module(
     module_id: str,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     result = RBACService.delete_module(supabase, module_id)
     return response(result)
 
 
 @router.get("/permissions")
 def get_permissions(ctx: RequestContext = Depends(require_roles("owner", "admin"))):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     permissions = RBACService.get_role_permissions(supabase, ctx)
     return response(permissions)
 
@@ -86,6 +86,6 @@ def update_permissions(
     payload: PermissionUpdate,
     ctx: RequestContext = Depends(require_roles("owner", "admin")),
 ):
-    supabase = get_supabase_client()
+    supabase = get_supabase_client(access_token=ctx.access_token)
     result = RBACService.update_permissions(supabase, payload, ctx)
     return response(result)

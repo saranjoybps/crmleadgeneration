@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
 import { Users, UserPlus, Shield, Mail, Trash2, Save, Info, Edit2, X } from "lucide-react";
 
-import { canManageOrganizationUsers, getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +28,12 @@ async function createUserDirect(formData: FormData) {
   const rawRoleKey = String(formData.get("role") ?? "member").trim().toLowerCase();
   const roleKey = rawRoleKey || "member";
   const path = `/o/${orgSlug}/dashboard/users`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canCreateUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_create ?? false;
+  if (!canCreateUsers) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create users.")}`);
 
   if (!email || !password) redirect(`${path}?error=${encodeURIComponent("Email and password are required.")}`);
 
@@ -44,11 +50,15 @@ async function createUserDirect(formData: FormData) {
 
 async function updateMemberRole(formData: FormData) {
   "use server";
-  const tenantId = String(formData.get("organization_id") ?? "").trim();
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
-  const membershipId = String(formData.get("member_id") ?? "").trim();
   const roleKey = String(formData.get("role") ?? "member").trim().toLowerCase();
   const path = `/o/${orgSlug}/dashboard/users`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEditUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_edit ?? false;
+  if (!canEditUsers) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit users.")}`);
 
   const { error } = await apiRequest(`/api/v1/auth/assign-role`, {
     method: "POST",
@@ -67,6 +77,12 @@ async function updateUserDetails(formData: FormData) {
   const userId = String(formData.get("user_id") ?? "").trim();
   const fullName = String(formData.get("full_name") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/users`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEditUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_edit ?? false;
+  if (!canEditUsers) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to edit users.")}`);
 
   const { error } = await apiRequest(`/api/v1/users/${userId}`, {
     method: "PATCH",
@@ -81,11 +97,16 @@ async function updateUserDetails(formData: FormData) {
 
 async function removeMember(formData: FormData) {
   "use server";
-  const tenantId = String(formData.get("organization_id") ?? "").trim();
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const membershipId = String(formData.get("member_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/users`;
   const supabase = await createClient();
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canDeleteUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_delete ?? false;
+  if (!canDeleteUsers) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to remove users.")}`);
 
   const { error } = await supabase.from("user_tenant_roles").update({ is_active: false }).eq("id", membershipId);
   if (error) redirect(`${path}?error=${encodeURIComponent(error.message)}`);
@@ -97,12 +118,28 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
   const { orgSlug } = await params;
   const query = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
-  const canManage = canManageOrganizationUsers(org.role);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   const currentUserRes = await supabase.from("users").select("id").eq("auth_user_id", user?.id).maybeSingle();
   const currentAppUserId = currentUserRes.data?.id ?? "";
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{
+      key: string;
+      permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
+    }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const usersPerm = permissionsResponse.data?.modules.find((m) => m.key === "users")?.permissions ?? {
+    can_view: false,
+    can_create: false,
+    can_edit: false,
+    can_delete: false,
+  };
+  const canManage = usersPerm.can_edit;
+
+  if (!usersPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view users.</p>;
+  }
 
   const [{ data: members, error: membersError }, { data: roleRows }] = await Promise.all([
     supabase
@@ -120,14 +157,32 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
       .eq("tenant_id", org.organization_id)
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
-    supabase.from("roles").select("id,key,label").eq("tenant_id", org.organization_id).order("created_at", { ascending: true }),
+    supabase
+      .from("roles")
+      .select("id,key,label,tenant_id,created_at")
+      .or(`tenant_id.eq.${org.organization_id},tenant_id.is.null`)
+      .order("created_at", { ascending: true }),
   ]);
 
   if (membersError) return <p className="p-6 text-red-600">{membersError.message}</p>;
 
   const memberRows = members ?? [];
-  const roles = roleRows ?? [];
-  const selectableRoles = roles.filter((role) => !EXCLUDED_ASSIGNABLE_ROLE_KEYS.has(role.key));
+  const roles = (roleRows ?? []) as Array<{ id: string; key: string; label: string; tenant_id: string | null }>;
+  const roleByKey = new Map<string, { id: string; key: string; label: string; tenant_id: string | null }>();
+  for (const role of roles) {
+    if (!roleByKey.has(role.key)) {
+      roleByKey.set(role.key, role);
+      continue;
+    }
+    const current = roleByKey.get(role.key)!;
+    const isCurrentSystem = current.tenant_id == null;
+    const isRoleSystem = role.tenant_id == null;
+    if (!isCurrentSystem && isRoleSystem) {
+      roleByKey.set(role.key, role);
+    }
+  }
+  const normalizedRoles = Array.from(roleByKey.values());
+  const selectableRoles = normalizedRoles.filter((role) => !EXCLUDED_ASSIGNABLE_ROLE_KEYS.has(role.key));
   
   const resolveUser = (v: any) => (Array.isArray(v) ? v[0] : v) || {};
   const resolveRole = (v: any) => (Array.isArray(v) ? v[0] : v) || {};
@@ -151,7 +206,7 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
       {query.success && <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl text-sm flex gap-2 items-center"><Info className="h-4 w-4" />{query.success}</div>}
 
       <div className="grid gap-8 lg:grid-cols-3">
-        {canManage && (
+        {canManage && usersPerm.can_create && (
           <div className="lg:col-span-1">
             <Card className="p-6 sticky top-8">
               <div className="flex items-center gap-2 mb-6">
@@ -236,7 +291,7 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
                               ) : (
                                 <div className="flex items-center gap-2 group/name">
                                   <p className="font-bold text-main truncate">{u.full_name || "New User"}</p>
-                                  {canManage && !isSelf && (
+                                  {canManage && usersPerm.can_edit && !isSelf && (
                                     <a
                                       href={`/o/${orgSlug}/dashboard/users?edit_user_id=${member.user_id}`}
                                       className="opacity-0 group-hover/name:opacity-100 p-1 rounded hover:bg-slate-100 text-slate-400 transition-opacity"
@@ -282,13 +337,29 @@ export default async function UsersPage({ params, searchParams }: UsersPageProps
                                     <option value="member">MEMBER</option>
                                   )}
                                 </select>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" type="submit"><Save className="h-3.5 w-3.5" /></Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-lg"
+                                  type="submit"
+                                  disabled={!usersPerm.can_edit}
+                                >
+                                  <Save className="h-3.5 w-3.5" />
+                                </Button>
                               </form>
                               <form action={removeMember}>
                                 <input type="hidden" name="organization_id" value={org.organization_id} />
                                 <input type="hidden" name="organization_slug" value={orgSlug} />
                                 <input type="hidden" name="member_id" value={member.id} />
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50" type="submit"><Trash2 className="h-3.5 w-3.5" /></Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-lg text-red-500 hover:bg-red-50"
+                                  type="submit"
+                                  disabled={!usersPerm.can_delete}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               </form>
                             </div>
                           ) : "-"}

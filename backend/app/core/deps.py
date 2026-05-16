@@ -90,6 +90,26 @@ def require_module_permission(module_key: str, action: str):
     return _guard
 
 
+def require_any_module_permission(module_keys: list[str], action: str):
+    def _guard(ctx: RequestContext = Depends(get_request_context)) -> RequestContext:
+        # Owner always has access
+        if ctx.role_key == "owner":
+            return ctx
+
+        supabase: Client = get_supabase_client(access_token=ctx.access_token)
+        for module_key in module_keys:
+            has_perm = supabase.rpc(
+                "has_module_permission",
+                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": action}
+            ).execute()
+            if has_perm.data:
+                return ctx
+
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    return _guard
+
+
 def require_users_or_departments_view():
     def _guard(ctx: RequestContext = Depends(get_request_context)) -> RequestContext:
         # Owner always has access
