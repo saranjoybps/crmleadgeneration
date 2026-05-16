@@ -72,38 +72,33 @@ async function deleteMilestone(formData: FormData) {
 
 export default async function RoadmapPage({ params, searchParams }: { 
   params: Promise<{ orgSlug: string }>,
-  searchParams: Promise<{ project_id?: string; modal?: string; error?: string; success?: string; milestone_id?: string }>
+  searchParams: Promise<{ project_id?: string; department_id?: string; modal?: string; error?: string; success?: string; milestone_id?: string }>
 }) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  const { project_id, modal, milestone_id } = query;
+  const { project_id, department_id, modal, milestone_id } = query;
   const org = await getOrganizationContextOrRedirect(orgSlug);
+  const { data: departments } = await apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug });
 
   // Fetch projects for the filter
-  const { data: projects } = await apiRequest<any[]>("/api/v1/projects", { orgSlug });
+  const { data: projects } = await apiRequest<any[]>(department_id ? `/api/v1/projects?department_id=${encodeURIComponent(department_id)}` : "/api/v1/projects", { orgSlug });
   
   // Fetch tasks with dependencies
-  const tasksUrl = project_id 
-    ? `/api/v1/tasks?project_id=${project_id}` 
-    : "/api/v1/tasks";
+  const tasksUrl = `/api/v1/tasks${project_id || department_id ? "?" : ""}${project_id ? `project_id=${encodeURIComponent(project_id)}` : ""}${department_id ? `${project_id ? "&" : ""}department_id=${encodeURIComponent(department_id)}` : ""}`;
   const { data: tasks } = await apiRequest<Task[]>(tasksUrl, { orgSlug });
 
   // Fetch tickets for Gantt mapping
-  const ticketsUrl = project_id
-    ? `/api/v1/tickets?project_id=${project_id}`
-    : "/api/v1/tickets";
+  const ticketsUrl = `/api/v1/tickets${project_id || department_id ? "?" : ""}${project_id ? `project_id=${encodeURIComponent(project_id)}` : ""}${department_id ? `${project_id ? "&" : ""}department_id=${encodeURIComponent(department_id)}` : ""}`;
   const { data: tickets } = await apiRequest<any[]>(ticketsUrl, { orgSlug });
 
   // Fetch milestones
-  const milestonesUrl = project_id
-    ? `/api/v1/milestones?project_id=${project_id}`
-    : "/api/v1/milestones";
+  const milestonesUrl = `/api/v1/milestones${project_id || department_id ? "?" : ""}${project_id ? `project_id=${encodeURIComponent(project_id)}` : ""}${department_id ? `${project_id ? "&" : ""}department_id=${encodeURIComponent(department_id)}` : ""}`;
   const { data: milestones } = await apiRequest<any[]>(milestonesUrl, { orgSlug });
 
   const activeProject = projects?.find(p => p.id === project_id);
   const selectedMilestone = milestones?.find(m => m.id === milestone_id);
   const selectedMilestoneProject = projects?.find(p => p.id === selectedMilestone?.project_id);
-  const closeHref = `/o/${orgSlug}/dashboard/roadmap${project_id ? `?project_id=${project_id}` : ""}`;
+  const closeHref = `/o/${orgSlug}/dashboard/roadmap${project_id || department_id ? "?" : ""}${project_id ? `project_id=${encodeURIComponent(project_id)}` : ""}${department_id ? `${project_id ? "&" : ""}department_id=${encodeURIComponent(department_id)}` : ""}`;
   const closeHrefWithParams = (params: string) => `${closeHref}${closeHref.includes('?') ? '&' : '?'}${params}`;
 
   return (
@@ -152,6 +147,26 @@ export default async function RoadmapPage({ params, searchParams }: {
                 className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${project_id === p.id ? "bg-violet-600 text-white shadow-md shadow-violet-200" : "bg-slate-100 text-muted hover:bg-slate-200"}`}
               >
                 {p.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 rounded-2xl bg-white border border-soft px-4 py-2 shadow-sm">
+          <span className="text-sm font-bold text-main mr-2">Department:</span>
+          <div className="flex gap-2">
+            <Link
+              href={`/o/${orgSlug}/dashboard/roadmap${project_id ? `?project_id=${encodeURIComponent(project_id)}` : ""}`}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${!department_id ? "bg-violet-600 text-white shadow-md shadow-violet-200" : "bg-slate-100 text-muted hover:bg-slate-200"}`}
+            >
+              All
+            </Link>
+            {(departments || []).map((d) => (
+              <Link
+                key={d.id}
+                href={`/o/${orgSlug}/dashboard/roadmap?${project_id ? `project_id=${encodeURIComponent(project_id)}&` : ""}department_id=${encodeURIComponent(d.id)}`}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${department_id === d.id ? "bg-violet-600 text-white shadow-md shadow-violet-200" : "bg-slate-100 text-muted hover:bg-slate-200"}`}
+              >
+                {d.name}
               </Link>
             ))}
           </div>

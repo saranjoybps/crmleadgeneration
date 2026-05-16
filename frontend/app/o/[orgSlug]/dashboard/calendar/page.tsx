@@ -11,19 +11,21 @@ import { cn } from "@/lib/utils";
 
 export default async function CalendarPage({ params, searchParams }: { 
   params: Promise<{ orgSlug: string }>,
-  searchParams: Promise<{ month?: string, year?: string }>
+  searchParams: Promise<{ month?: string, year?: string, department_id?: string }>
 }) {
   const { orgSlug } = await params;
-  const { month, year } = await searchParams;
+  const { month, year, department_id } = await searchParams;
   const org = await getOrganizationContextOrRedirect(orgSlug);
+  const { data: departments } = await apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug });
 
   const now = new Date();
   const currentMonth = month ? parseInt(month) : now.getMonth();
   const currentYear = year ? parseInt(year) : now.getFullYear();
 
   // Fetch tasks and tickets for this month
-  const { data: tasks } = await apiRequest<Task[]>("/api/v1/tasks", { orgSlug });
-  const { data: tickets } = await apiRequest<Ticket[]>("/api/v1/tickets", { orgSlug });
+  const scopedQ = department_id ? `?department_id=${encodeURIComponent(department_id)}` : "";
+  const { data: tasks } = await apiRequest<Task[]>(`/api/v1/tasks${scopedQ}`, { orgSlug });
+  const { data: tickets } = await apiRequest<Ticket[]>(`/api/v1/tickets${scopedQ}`, { orgSlug });
 
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
@@ -90,6 +92,14 @@ export default async function CalendarPage({ params, searchParams }: {
           </Link>
         </div>
       </header>
+      <div className="flex flex-wrap gap-2">
+        <Link href={`/o/${orgSlug}/dashboard/calendar?month=${currentMonth}&year=${currentYear}`} className={cn("px-3 py-1 rounded-xl text-xs font-bold", !department_id ? "bg-violet-600 text-white" : "bg-slate-100 text-muted")}>All Departments</Link>
+        {(departments || []).map((d) => (
+          <Link key={d.id} href={`/o/${orgSlug}/dashboard/calendar?month=${currentMonth}&year=${currentYear}&department_id=${encodeURIComponent(d.id)}`} className={cn("px-3 py-1 rounded-xl text-xs font-bold", department_id === d.id ? "bg-violet-600 text-white" : "bg-slate-100 text-muted")}>
+            {d.name}
+          </Link>
+        ))}
+      </div>
 
       <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
         <div className="grid grid-cols-7 bg-slate-50 border-b border-soft">

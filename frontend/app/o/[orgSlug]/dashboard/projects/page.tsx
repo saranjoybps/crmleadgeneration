@@ -19,7 +19,7 @@ type ProjectsPageProps = {
 };
 
 type UserOption = { user_id: string; email: string };
-type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string };
+type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string; department_ids?: string[] };
 type MemberRow = { project_id: string; user_id: string; users?: { email?: string; full_name?: string } | Array<{ email?: string; full_name?: string }> };
 type UserRow = { id: string; email: string; full_name?: string };
 
@@ -40,6 +40,7 @@ async function createProject(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const departmentIds = formData.getAll("department_ids").map((v) => String(v).trim()).filter(Boolean);
   const departmentId = String(formData.get("department_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
   const org = await getOrganizationContextOrRedirect(orgSlug);
@@ -66,7 +67,14 @@ async function createProject(formData: FormData) {
   const { error } = await apiRequest<ProjectRow>("/api/v1/projects", {
     method: "POST",
     orgSlug,
-    body: { name, department_id: departmentId || null, description: description || null, status: "active", member_user_ids: ids },
+    body: {
+      name,
+      department_ids: departmentIds.length ? departmentIds : (departmentId ? [departmentId] : []),
+      department_id: departmentId || null,
+      description: description || null,
+      status: "active",
+      member_user_ids: ids,
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -80,6 +88,7 @@ async function updateProject(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
+  const departmentIds = formData.getAll("department_ids").map((v) => String(v).trim()).filter(Boolean);
   const departmentId = String(formData.get("department_id") ?? "").trim();
   const status = String(formData.get("status") ?? "active").trim();
   const path = `/o/${orgSlug}/dashboard/projects`;
@@ -100,7 +109,13 @@ async function updateProject(formData: FormData) {
   const { error } = await apiRequest<ProjectRow>(`/api/v1/projects/${encodeURIComponent(projectId)}`, {
     method: "PATCH",
     orgSlug,
-    body: { name: name || undefined, department_id: departmentId || undefined, description: description || null, status },
+    body: {
+      name: name || undefined,
+      department_ids: departmentIds.length ? departmentIds : undefined,
+      department_id: departmentId || undefined,
+      description: description || null,
+      status,
+    },
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -237,6 +252,10 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
   }));
   const members = (membersResp.data ?? []) as MemberRow[];
   const selectedProject = projects.find((p) => p.id === query.project);
+  const getProjectDepartmentNames = (project: ProjectRow) => {
+    const ids = project.department_ids && project.department_ids.length ? project.department_ids : (project.department_id ? [project.department_id] : []);
+    return ids.map((id) => departments.find((d) => d.id === id)?.name).filter(Boolean) as string[];
+  };
   const selectedMembers = selectedProject ? members.filter((m) => m.project_id === selectedProject.id) : [];
   const selectedMemberIds = new Set(selectedMembers.map((m) => m.user_id));
   const unassignedUsers = userOptions.filter((u) => !selectedMemberIds.has(u.user_id));
@@ -335,6 +354,11 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
                   <p className="mt-2 line-clamp-2 text-sm text-muted leading-relaxed">
                     {project.description ?? "No description provided."}
                   </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {getProjectDepartmentNames(project).map((dept) => (
+                      <Badge key={`${project.id}-${dept}`} variant="outline">{dept}</Badge>
+                    ))}
+                  </div>
                 </Link>
 
                 <div className="mt-6 flex items-center justify-between pt-6 border-t border-soft">
@@ -379,13 +403,13 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-main">Department</label>
+            <label className="text-sm font-medium text-main">Departments</label>
             <select
-              name="department_id"
+              name="department_ids"
               required
-              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+              multiple
+              className="min-h-[120px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
-              <option value="">Select department...</option>
               {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
@@ -494,13 +518,13 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-main">Department</label>
+                  <label className="text-sm font-medium text-main">Departments</label>
                   <select
-                    name="department_id"
-                    defaultValue={selectedProject.department_id ?? ""}
-                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    name="department_ids"
+                    defaultValue={selectedProject.department_ids && selectedProject.department_ids.length ? selectedProject.department_ids : (selectedProject.department_id ? [selectedProject.department_id] : [])}
+                    multiple
+                    className="min-h-[120px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                   >
-                    <option value="">Unassigned</option>
                     {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>

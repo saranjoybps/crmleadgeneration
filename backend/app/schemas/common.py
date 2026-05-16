@@ -76,6 +76,7 @@ class MilestoneUpdate(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     department_id: str | None = None
+    department_ids: list[str] | None = None
     description: str | None = None
     status: str | None = None
     member_user_ids: list[str] | None = None
@@ -84,6 +85,7 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = None
     department_id: str | None = None
+    department_ids: list[str] | None = None
     description: str | None = None
     status: str | None = None
 

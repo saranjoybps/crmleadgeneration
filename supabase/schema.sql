@@ -1359,3 +1359,143 @@ drop table if exists public.organizations cascade;
 drop table if exists public.department_permissions cascade;
 drop table if exists public.user_department_roles cascade;
 drop table if exists public.department_roles cascade;
+
+-- ----------
+-- Multi-department project scope (compatibility-safe rollout)
+-- ----------
+create table if not exists public.project_departments (
+  project_id uuid not null references public.projects(id) on delete cascade,
+  department_id uuid not null references public.departments(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (project_id, department_id)
+);
+
+create index if not exists idx_project_departments_tenant_project on public.project_departments(tenant_id, project_id);
+create index if not exists idx_project_departments_tenant_department on public.project_departments(tenant_id, department_id);
+
+insert into public.project_departments (project_id, department_id, tenant_id)
+select p.id, p.department_id, p.tenant_id
+from public.projects p
+where p.department_id is not null
+on conflict (project_id, department_id) do nothing;
+
+alter table public.project_departments enable row level security;
+
+drop policy if exists project_departments_select_member on public.project_departments;
+create policy project_departments_select_member on public.project_departments
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists project_departments_manage_admin on public.project_departments;
+create policy project_departments_manage_admin on public.project_departments
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists projects_select_scoped on public.projects;
+create policy projects_select_scoped on public.projects
+for select using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = projects.id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+drop policy if exists tickets_select_scoped on public.tickets;
+create policy tickets_select_scoped on public.tickets
+for select using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+drop policy if exists tickets_insert_scoped on public.tickets;
+create policy tickets_insert_scoped on public.tickets
+for insert with check (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+drop policy if exists tickets_update_scoped on public.tickets;
+create policy tickets_update_scoped on public.tickets
+for update using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = tickets.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+drop policy if exists tasks_select_scoped on public.tasks;
+create policy tasks_select_scoped on public.tasks
+for select using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = tasks.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+drop policy if exists milestones_select_scoped on public.milestones;
+create policy milestones_select_scoped on public.milestones
+for select using (
+  public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  or (
+    public.has_tenant_role(tenant_id, array['member']::text[])
+    and exists (
+      select 1
+      from public.project_departments pd
+      join public.user_departments udr on udr.department_id = pd.department_id
+      where pd.project_id = milestones.project_id
+        and udr.user_id = public.current_app_user_id()
+    )
+  )
+);

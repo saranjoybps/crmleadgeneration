@@ -17,6 +17,19 @@ class DashboardService:
         return {x["department_id"] for x in (rows.data or [])}
 
     @staticmethod
+    def _get_project_department_map(supabase: Client, tenant_id: str) -> dict[str, set[str]]:
+        rows = (
+            supabase.table("project_departments")
+            .select("project_id,department_id")
+            .eq("tenant_id", tenant_id)
+            .execute()
+        )
+        mapping: dict[str, set[str]] = {}
+        for row in (rows.data or []):
+            mapping.setdefault(row["project_id"], set()).add(row["department_id"])
+        return mapping
+
+    @staticmethod
     def get_summary(supabase: Client, ctx: RequestContext):
         # This is a bit inefficient to do separate calls, 
         # but for now it's okay. In a real app we might use a view or specialized RPC.
@@ -24,43 +37,37 @@ class DashboardService:
         allowed_department_ids = DashboardService._get_accessible_department_ids(supabase, ctx)
         
         if allowed_department_ids is not None:
-            # Filter projects by department for non-admin users
-            projects_count = (
+            project_rows = (
                 supabase.table("projects")
-                .select("id", count="exact")
+                .select("id,department_id")
                 .eq("tenant_id", ctx.tenant_id)
-                .in_("department_id", list(allowed_department_ids))
                 .execute()
-                .count
+                .data or []
             )
-            
-            # Filter tickets by project department for non-admin users
+            project_department_map = DashboardService._get_project_department_map(supabase, ctx.tenant_id)
+            allowed_project_ids = {
+                p["id"]
+                for p in project_rows
+                if (
+                    project_department_map.get(p["id"], {p["department_id"]} if p.get("department_id") else set())
+                ).intersection(allowed_department_ids)
+            }
+            projects_count = len(allowed_project_ids)
             tickets_count = (
                 supabase.table("tickets")
                 .select("id", count="exact")
                 .eq("tenant_id", ctx.tenant_id)
                 .eq("status", "open")
+                .in_("project_id", list(allowed_project_ids) or ["00000000-0000-0000-0000-000000000000"])
                 .execute()
+                .count
             )
-            # Filter tickets based on project department
-            if tickets_count > 0:
-                ticket_rows = (
-                    supabase.table("tickets")
-                    .select("id, projects(department_id)")
-                    .eq("tenant_id", ctx.tenant_id)
-                    .eq("status", "open")
-                    .execute()
-                    .data or []
-                )
-                tickets_count = len([t for t in ticket_rows if t.get("projects", {}).get("department_id") in allowed_department_ids])
-            
-            # Filter tasks by department for non-admin users
             tasks_count = (
                 supabase.table("tasks")
                 .select("id", count="exact")
                 .eq("tenant_id", ctx.tenant_id)
                 .not_.eq("status", "closed")
-                .in_("department_id", list(allowed_department_ids))
+                .in_("project_id", list(allowed_project_ids) or ["00000000-0000-0000-0000-000000000000"])
                 .execute()
                 .count
             )
