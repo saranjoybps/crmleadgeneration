@@ -187,7 +187,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
   // Fetch milestones for all projects (or current project)
   const milestonesUrl = selectedProject 
     ? `/api/v1/milestones?project_id=${selectedProject}` 
-    : (projects[0]?.id ? `/api/v1/milestones?project_id=${projects[0].id}` : "/api/v1/milestones");
+    : "/api/v1/milestones";
   const { data: milestonesRes } = await apiRequest<Milestone[]>(milestonesUrl, { orgSlug });
   const milestones = milestonesRes ?? [];
 
@@ -400,6 +400,7 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
                   orgSlug={orgSlug}
                   defaultProjectId={selectedTicket.project_id}
                   defaultMilestoneId={selectedTicket.milestone_id || ""}
+                  allowProjectChange={false}
                 />
               </div>
               <div className="space-y-1.5">

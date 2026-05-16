@@ -3,48 +3,10 @@ from supabase import Client
 
 from app.core.deps import RequestContext
 from app.schemas.common import ProjectCreate, ProjectMemberCreate, ProjectUpdate
+from app.services.access_scope import AccessScopeService
 
 
 class ProjectService:
-    @staticmethod
-    def _get_accessible_project_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
-        if ctx.role_key in {"owner", "admin"}:
-            return None
-        rows = (
-            supabase.table("project_members")
-            .select("project_id")
-            .eq("tenant_id", ctx.tenant_id)
-            .eq("user_id", ctx.app_user_id)
-            .eq("is_active", True)
-            .execute()
-        )
-        return {x["project_id"] for x in (rows.data or [])}
-
-    @staticmethod
-    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
-        if ctx.role_key in {"owner", "admin", "client"}:
-            return None
-        rows = (
-            supabase.table("user_departments")
-            .select("department_id")
-            .eq("user_id", ctx.app_user_id)
-            .execute()
-        )
-        return {x["department_id"] for x in (rows.data or [])}
-
-    @staticmethod
-    def _get_project_department_map(supabase: Client, tenant_id: str) -> dict[str, list[str]]:
-        rows = (
-            supabase.table("project_departments")
-            .select("project_id,department_id")
-            .eq("tenant_id", tenant_id)
-            .execute()
-        )
-        mapping: dict[str, list[str]] = {}
-        for row in (rows.data or []):
-            mapping.setdefault(row["project_id"], []).append(row["department_id"])
-        return mapping
-
     @classmethod
     def list_projects(cls, supabase: Client, ctx: RequestContext, department_id: str | None = None):
         query = (
@@ -54,17 +16,17 @@ class ProjectService:
             .order("created_at", desc=True)
         )
         rows = query.execute().data or []
-        project_department_map = cls._get_project_department_map(supabase, ctx.tenant_id)
+        project_department_map = AccessScopeService.get_project_department_map(supabase, ctx.tenant_id)
         for row in rows:
             fallback = [row["department_id"]] if row.get("department_id") else []
-            row["department_ids"] = project_department_map.get(row["id"], fallback)
-        
-        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
-        if allowed_department_ids is not None:
-            rows = [row for row in rows if set(row.get("department_ids", [])).intersection(allowed_department_ids)]
+            row["department_ids"] = list(project_department_map.get(row["id"], set()) or set(fallback))
+
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None:
+            rows = [row for row in rows if row["id"] in allowed_project_ids]
         if department_id:
             rows = [row for row in rows if department_id in row.get("department_ids", [])]
-        
+
         return rows
 
     @classmethod
@@ -79,14 +41,14 @@ class ProjectService:
         )
         if not data.data:
             raise HTTPException(status_code=404, detail="Project not found")
-        project_department_map = cls._get_project_department_map(supabase, ctx.tenant_id)
+        project_department_map = AccessScopeService.get_project_department_map(supabase, ctx.tenant_id)
         fallback = [data.data["department_id"]] if data.data.get("department_id") else []
-        data.data["department_ids"] = project_department_map.get(data.data["id"], fallback)
-        
-        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
-        if allowed_department_ids is not None and not set(data.data.get("department_ids", [])).intersection(allowed_department_ids):
+        data.data["department_ids"] = list(project_department_map.get(data.data["id"], set()) or set(fallback))
+
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None and data.data["id"] not in allowed_project_ids:
             raise HTTPException(status_code=404, detail="Project not found")
-        
+
         return data.data
 
     @classmethod
@@ -98,11 +60,6 @@ class ProjectService:
                 department_ids = [legacy_department]
         if not department_ids:
             raise HTTPException(status_code=400, detail="department_ids is required")
-        if ctx.role_key not in {"owner", "admin"}:
-            allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx) or set()
-            if not set(department_ids).issubset(allowed_department_ids):
-                raise HTTPException(status_code=403, detail="Forbidden for this department")
-
         body = {
             "tenant_id": ctx.tenant_id,
             "department_id": department_ids[0],
@@ -125,6 +82,7 @@ class ProjectService:
         project["department_ids"] = list(dict.fromkeys(department_ids))
 
         member_ids = set(payload.member_user_ids or [])
+        member_ids.add(ctx.app_user_id)
         if member_ids:
             members_to_insert = [
                 {
@@ -151,10 +109,9 @@ class ProjectService:
 
         if next_department_ids is not None and len(next_department_ids) == 0:
             raise HTTPException(status_code=400, detail="department_ids cannot be empty")
-        if next_department_ids is not None and ctx.role_key not in {"owner", "admin"}:
-            allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx) or set()
-            if not set(next_department_ids).issubset(allowed_department_ids):
-                raise HTTPException(status_code=403, detail="Forbidden for this department")
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None and project_id not in allowed_project_ids:
+            raise HTTPException(status_code=404, detail="Project not found")
         update_payload = payload.model_dump(exclude_none=True, exclude={"department_ids"})
         if next_department_ids is not None:
             update_payload["department_id"] = next_department_ids[0]
@@ -176,10 +133,10 @@ class ProjectService:
             ).execute()
             row["department_ids"] = deduped_ids
         else:
-            row["department_ids"] = cls._get_project_department_map(supabase, ctx.tenant_id).get(
+            row["department_ids"] = list(AccessScopeService.get_project_department_map(supabase, ctx.tenant_id).get(
                 project_id,
-                [row["department_id"]] if row.get("department_id") else [],
-            )
+                set([row["department_id"]]) if row.get("department_id") else set(),
+            ))
         return row
 
     @staticmethod
@@ -216,7 +173,7 @@ class ProjectService:
 
     @classmethod
     def list_project_members(cls, supabase: Client, project_id: str, ctx: RequestContext):
-        allowed_ids = cls._get_accessible_project_ids(supabase, ctx)
+        allowed_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
         if allowed_ids is not None and project_id not in allowed_ids:
             raise HTTPException(status_code=404, detail="Project not found")
         

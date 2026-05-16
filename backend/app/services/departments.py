@@ -5,6 +5,7 @@ from typing import Optional
 from supabase import Client
 
 from app.core.deps import RequestContext
+from app.services.access_scope import AccessScopeService
 
 logger = logging.getLogger("joycrm.services.departments")
 
@@ -34,12 +35,18 @@ class DepartmentService:
     @staticmethod
     def list_departments(supabase: Client, ctx: RequestContext, limit: int = 100, offset: int = 0) -> list[dict]:
         try:
-            response = supabase.table("departments")\
-                .select("*")\
-                .eq("tenant_id", ctx.tenant_id)\
-                .range(offset, offset + limit - 1)\
-                .order("created_at", desc=False)\
-                .execute()
+            query = (
+                supabase.table("departments")
+                .select("*")
+                .eq("tenant_id", ctx.tenant_id)
+                .order("created_at", desc=False)
+            )
+            allowed_department_ids = AccessScopeService.get_accessible_department_ids(supabase, ctx)
+            if allowed_department_ids is not None:
+                if not allowed_department_ids:
+                    return []
+                query = query.in_("id", list(allowed_department_ids))
+            response = query.range(offset, offset + limit - 1).execute()
             return response.data or []
         except Exception as e:
             logger.error(f"Error listing departments: {e}")

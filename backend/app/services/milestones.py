@@ -3,34 +3,10 @@ from supabase import Client
 
 from app.core.deps import RequestContext
 from app.schemas.common import MilestoneCreate, MilestoneUpdate
+from app.services.access_scope import AccessScopeService
 
 
 class MilestoneService:
-    @staticmethod
-    def _get_accessible_department_ids(supabase: Client, ctx: RequestContext) -> set[str] | None:
-        if ctx.role_key in {"owner", "admin", "client"}:
-            return None
-        rows = (
-            supabase.table("user_departments")
-            .select("department_id")
-            .eq("user_id", ctx.app_user_id)
-            .execute()
-        )
-        return {x["department_id"] for x in (rows.data or [])}
-
-    @staticmethod
-    def _get_project_department_map(supabase: Client, tenant_id: str) -> dict[str, set[str]]:
-        rows = (
-            supabase.table("project_departments")
-            .select("project_id,department_id")
-            .eq("tenant_id", tenant_id)
-            .execute()
-        )
-        mapping: dict[str, set[str]] = {}
-        for row in (rows.data or []):
-            mapping.setdefault(row["project_id"], set()).add(row["department_id"])
-        return mapping
-
     @classmethod
     def list_milestones(
         cls,
@@ -49,13 +25,13 @@ class MilestoneService:
         
         rows = query.order("due_date", desc=False).execute().data or []
         
-        project_department_map = cls._get_project_department_map(supabase, ctx.tenant_id)
+        project_department_map = AccessScopeService.get_project_department_map(supabase, ctx.tenant_id)
         for row in rows:
             fallback = {row.get("projects", {}).get("department_id")} if row.get("projects", {}).get("department_id") else set()
             row["_project_department_ids"] = project_department_map.get(row["project_id"], fallback)
-        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
-        if allowed_department_ids is not None:
-            rows = [row for row in rows if row.get("_project_department_ids", set()).intersection(allowed_department_ids)]
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None:
+            rows = [row for row in rows if row["project_id"] in allowed_project_ids]
         if department_id:
             rows = [row for row in rows if department_id in row.get("_project_department_ids", set())]
         for row in rows:
@@ -76,17 +52,17 @@ class MilestoneService:
         if not data.data:
             raise HTTPException(status_code=404, detail="Milestone not found")
         
-        project_department_map = cls._get_project_department_map(supabase, ctx.tenant_id)
-        fallback = {data.data.get("projects", {}).get("department_id")} if data.data.get("projects", {}).get("department_id") else set()
-        project_department_ids = project_department_map.get(data.data["project_id"], fallback)
-        allowed_department_ids = cls._get_accessible_department_ids(supabase, ctx)
-        if allowed_department_ids is not None and not project_department_ids.intersection(allowed_department_ids):
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None and data.data["project_id"] not in allowed_project_ids:
             raise HTTPException(status_code=404, detail="Milestone not found")
         
         return data.data
 
     @staticmethod
     def create_milestone(supabase: Client, payload: MilestoneCreate, ctx: RequestContext):
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None and payload.project_id not in allowed_project_ids:
+            raise HTTPException(status_code=403, detail="Forbidden for this project")
         body = {
             "tenant_id": ctx.tenant_id,
             "project_id": payload.project_id,
@@ -104,6 +80,20 @@ class MilestoneService:
 
     @staticmethod
     def update_milestone(supabase: Client, milestone_id: str, payload: MilestoneUpdate, ctx: RequestContext):
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None:
+            milestone = (
+                supabase.table("milestones")
+                .select("id,project_id")
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("id", milestone_id)
+                .maybe_single()
+                .execute()
+            )
+            if not milestone.data:
+                raise HTTPException(status_code=404, detail="Milestone not found")
+            if milestone.data["project_id"] not in allowed_project_ids:
+                raise HTTPException(status_code=403, detail="Forbidden for this project")
         updated = (
             supabase.table("milestones")
             .update(payload.model_dump(exclude_none=True))

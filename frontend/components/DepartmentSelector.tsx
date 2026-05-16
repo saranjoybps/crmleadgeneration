@@ -75,8 +75,7 @@ export function DepartmentSelector({
         className="w-full px-4 py-3 rounded-xl border border-soft bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all appearance-none"
         disabled={loading}
       >
-        <option value="">{loading ? "Loading..." : placeholder}</option>
-        {showAllOption && <option value="">All Departments</option>}
+        <option value="">{loading ? "Loading..." : (showAllOption ? "All Departments" : placeholder)}</option>
         {departments.map((dept) => (
           <option key={dept.id} value={dept.id}>
             {dept.name}

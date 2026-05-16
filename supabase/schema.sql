@@ -1664,3 +1664,180 @@ for select using (
     )
   )
 );
+
+-- ----------
+-- Project-membership scope (owner-only global visibility)
+-- ----------
+drop policy if exists projects_select_scoped on public.projects;
+create policy projects_select_scoped on public.projects
+for select using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = projects.tenant_id
+      and pm.project_id = projects.id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tickets_select_scoped on public.tickets;
+create policy tickets_select_scoped on public.tickets
+for select using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tickets.tenant_id
+      and pm.project_id = tickets.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tasks_select_scoped on public.tasks;
+create policy tasks_select_scoped on public.tasks
+for select using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tasks.tenant_id
+      and pm.project_id = tasks.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists milestones_select_scoped on public.milestones;
+create policy milestones_select_scoped on public.milestones
+for select using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = milestones.tenant_id
+      and pm.project_id = milestones.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tickets_insert_scoped on public.tickets;
+create policy tickets_insert_scoped on public.tickets
+for insert with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tickets.tenant_id
+      and pm.project_id = tickets.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tickets_update_scoped on public.tickets;
+create policy tickets_update_scoped on public.tickets
+for update using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tickets.tenant_id
+      and pm.project_id = tickets.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tickets.tenant_id
+      and pm.project_id = tickets.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tasks_insert_admin on public.tasks;
+drop policy if exists tasks_insert_scoped on public.tasks;
+create policy tasks_insert_scoped on public.tasks
+for insert with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tasks.tenant_id
+      and pm.project_id = tasks.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists tasks_update_scoped on public.tasks;
+create policy tasks_update_scoped on public.tasks
+for update using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tasks.tenant_id
+      and pm.project_id = tasks.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = tasks.tenant_id
+      and pm.project_id = tasks.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists milestones_insert_scoped on public.milestones;
+create policy milestones_insert_scoped on public.milestones
+for insert with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = milestones.tenant_id
+      and pm.project_id = milestones.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);
+
+drop policy if exists milestones_update_scoped on public.milestones;
+create policy milestones_update_scoped on public.milestones
+for update using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = milestones.tenant_id
+      and pm.project_id = milestones.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1
+    from public.project_members pm
+    where pm.tenant_id = milestones.tenant_id
+      and pm.project_id = milestones.project_id
+      and pm.user_id = public.current_app_user_id()
+      and pm.is_active = true
+  )
+);

@@ -9,24 +9,32 @@ type ProjectMilestoneSelectorProps = {
   defaultProjectId?: string;
   defaultMilestoneId?: string;
   orgSlug: string;
+  allowProjectChange?: boolean;
 };
 
 export function ProjectMilestoneSelector({ 
   projects, 
   milestones: initialMilestones, 
   defaultProjectId = "", 
-  defaultMilestoneId = "" 
+  defaultMilestoneId = "",
+  allowProjectChange = true,
 }: ProjectMilestoneSelectorProps) {
   const [selectedProjectId, setSelectedProjectId] = useState(defaultProjectId);
+  const [selectedMilestoneId, setSelectedMilestoneId] = useState(defaultMilestoneId);
   const [filteredMilestones, setFilteredMilestones] = useState<Milestone[]>([]);
 
   useEffect(() => {
     if (selectedProjectId) {
-      setFilteredMilestones(initialMilestones.filter(m => m.project_id === selectedProjectId));
+      const next = initialMilestones.filter(m => m.project_id === selectedProjectId);
+      setFilteredMilestones(next);
+      if (selectedMilestoneId && !next.some((m) => m.id === selectedMilestoneId)) {
+        setSelectedMilestoneId("");
+      }
     } else {
       setFilteredMilestones([]);
+      setSelectedMilestoneId("");
     }
-  }, [selectedProjectId, initialMilestones]);
+  }, [selectedProjectId, selectedMilestoneId, initialMilestones]);
 
   return (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -37,6 +45,7 @@ export function ProjectMilestoneSelector({
           required 
           value={selectedProjectId}
           onChange={(e) => setSelectedProjectId(e.target.value)}
+          disabled={!allowProjectChange}
           className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500"
         >
           <option value="">Choose a project...</option>
@@ -47,7 +56,9 @@ export function ProjectMilestoneSelector({
         <label className="text-sm font-medium text-main">Milestone</label>
         <select 
           name="milestone_id" 
-          defaultValue={defaultMilestoneId}
+          value={selectedMilestoneId}
+          onChange={(e) => setSelectedMilestoneId(e.target.value)}
+          disabled={!selectedProjectId}
           className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500"
         >
           <option value="">None</option>
