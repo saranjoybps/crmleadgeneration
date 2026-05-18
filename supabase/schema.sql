@@ -1504,6 +1504,7 @@ grant execute on function public.ensure_app_user() to authenticated;
 grant execute on function public.ensure_user_tenant(text) to authenticated;
 grant execute on function public.create_tenant_invite(uuid, text, uuid) to authenticated;
 grant execute on function public.accept_tenant_invite(text) to authenticated;
+grant execute on function public.can_access_vault_credential(uuid, uuid) to authenticated;
 
 -- Optional cleanup for old installs
 drop function if exists public.accept_organization_invite(text);
@@ -1841,3 +1842,164 @@ with check (
       and pm.is_active = true
   )
 );
+
+-- ----------
+-- Vault
+-- ----------
+create table if not exists public.vault_credentials (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  label text not null,
+  username text null,
+  email_id text null,
+  password_encrypted text not null,
+  password_fingerprint text not null,
+  notes text null,
+  login_url text null,
+  category text null,
+  tags text[] not null default '{}',
+  status text not null default 'active',
+  created_by uuid null references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vault_credentials_status_valid check (status in ('active', 'archived', 'disabled'))
+);
+
+create table if not exists public.vault_credential_shares (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  credential_id uuid not null references public.vault_credentials(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  access text not null default 'grant',
+  updated_by uuid null references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint vault_credential_shares_unique unique (credential_id, user_id),
+  constraint vault_credential_shares_access_valid check (access in ('grant', 'deny'))
+);
+
+create index if not exists idx_vault_credentials_tenant_updated on public.vault_credentials(tenant_id, updated_at desc);
+create index if not exists idx_vault_credentials_tenant_status on public.vault_credentials(tenant_id, status);
+create index if not exists idx_vault_credentials_tenant_category on public.vault_credentials(tenant_id, category);
+create index if not exists idx_vault_credential_shares_tenant_user on public.vault_credential_shares(tenant_id, user_id);
+
+drop trigger if exists trg_vault_credentials_updated_at on public.vault_credentials;
+create trigger trg_vault_credentials_updated_at
+before update on public.vault_credentials
+for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_vault_credential_shares_updated_at on public.vault_credential_shares;
+create trigger trg_vault_credential_shares_updated_at
+before update on public.vault_credential_shares
+for each row execute function public.touch_updated_at();
+
+alter table public.vault_credentials enable row level security;
+alter table public.vault_credential_shares enable row level security;
+
+create or replace function public.can_access_vault_credential(p_tenant_id uuid, p_credential_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+begin
+  v_user_id := public.current_app_user_id();
+  if v_user_id is null then
+    return false;
+  end if;
+
+  if public.has_tenant_role(p_tenant_id, array['owner']::text[]) then
+    return true;
+  end if;
+
+  if exists (
+    select 1
+    from public.vault_credentials c
+    where c.tenant_id = p_tenant_id
+      and c.id = p_credential_id
+      and c.created_by = v_user_id
+  ) then
+    return true;
+  end if;
+
+  return exists (
+    select 1
+    from public.vault_credential_shares s
+    where s.tenant_id = p_tenant_id
+      and s.credential_id = p_credential_id
+      and s.user_id = v_user_id
+      and s.access = 'grant'
+  );
+end;
+$$;
+
+drop policy if exists vault_credentials_select_scoped on public.vault_credentials;
+create policy vault_credentials_select_scoped on public.vault_credentials
+for select using (
+  public.can_access_vault_credential(tenant_id, id)
+);
+
+drop policy if exists vault_credentials_insert_scoped on public.vault_credentials;
+create policy vault_credentials_insert_scoped on public.vault_credentials
+for insert with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or created_by = public.current_app_user_id()
+);
+
+drop policy if exists vault_credentials_update_scoped on public.vault_credentials;
+create policy vault_credentials_update_scoped on public.vault_credentials
+for update using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or created_by = public.current_app_user_id()
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or created_by = public.current_app_user_id()
+);
+
+drop policy if exists vault_credentials_delete_scoped on public.vault_credentials;
+create policy vault_credentials_delete_scoped on public.vault_credentials
+for delete using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or created_by = public.current_app_user_id()
+);
+
+drop policy if exists vault_shares_select_scoped on public.vault_credential_shares;
+create policy vault_shares_select_scoped on public.vault_credential_shares
+for select using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or user_id = public.current_app_user_id()
+  or exists (
+    select 1 from public.vault_credentials c
+    where c.id = vault_credential_shares.credential_id
+      and c.tenant_id = vault_credential_shares.tenant_id
+      and c.created_by = public.current_app_user_id()
+  )
+);
+
+drop policy if exists vault_shares_manage_scoped on public.vault_credential_shares;
+create policy vault_shares_manage_scoped on public.vault_credential_shares
+for all using (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1 from public.vault_credentials c
+    where c.id = vault_credential_shares.credential_id
+      and c.tenant_id = vault_credential_shares.tenant_id
+      and c.created_by = public.current_app_user_id()
+  )
+)
+with check (
+  public.has_tenant_role(tenant_id, array['owner']::text[])
+  or exists (
+    select 1 from public.vault_credentials c
+    where c.id = vault_credential_shares.credential_id
+      and c.tenant_id = vault_credential_shares.tenant_id
+      and c.created_by = public.current_app_user_id()
+  )
+);
+
+insert into public.modules (key, label) values ('vault', 'Vault')
+on conflict (key) do update set label = excluded.label;

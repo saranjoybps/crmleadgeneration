@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, projects, tasks, tickets, users, workspace, dashboard, comments, todos, milestones, rbac, departments
+from app.api.routes import auth, projects, tasks, tickets, users, workspace, dashboard, comments, todos, milestones, rbac, departments, vault
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -15,3 +15,4 @@ api_router.include_router(comments.router)
 api_router.include_router(todos.router)
 api_router.include_router(rbac.router)
 api_router.include_router(departments.router)
+api_router.include_router(vault.router)

@@ -10,6 +10,7 @@ class Settings:
     supabase_url: str
     supabase_service_key: str
     allowed_origins: list[str]
+    vault_encryption_key: str
 
 
 def get_settings() -> Settings:
@@ -21,4 +22,5 @@ def get_settings() -> Settings:
         supabase_url=os.getenv("SUPABASE_URL", ""),
         supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", ""),
         allowed_origins=allowed_origins,
+        vault_encryption_key=os.getenv("VAULT_ENCRYPTION_KEY", ""),
     )

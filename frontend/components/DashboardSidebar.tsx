@@ -13,7 +13,8 @@ import {
   X,
   ListChecks,
   Map,
-  Calendar
+  Calendar,
+  LockKeyhole,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -40,6 +41,7 @@ const MAIN_LINKS = [
   { href: "/dashboard/tickets", moduleKey: "tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/tasks", moduleKey: "tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/todos", moduleKey: "todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
+  { href: "/dashboard/vault", moduleKey: "vault", label: "Vault", icon: LockKeyhole, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/users", moduleKey: "users", label: "Users", icon: Users, roles: ["owner", "admin"] },
   { href: "/dashboard/settings", moduleKey: "settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
 ] as const;
