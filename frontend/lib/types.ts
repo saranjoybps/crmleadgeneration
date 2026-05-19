@@ -134,6 +134,110 @@ export type Task = {
   dependencies?: TaskDependency[];
 };
 
+export type AttendanceStatus = "present" | "late" | "half_day" | "absent" | "overtime";
+
+export type Shift = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  grace_period_minutes: number;
+  late_threshold_minutes: number;
+  half_day_after_minutes: number;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserShiftAssignment = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  shift_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+  shift?: Shift;
+};
+
+export type AttendanceRecord = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  date: string;
+  shift_id: string | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  status: AttendanceStatus;
+  working_minutes: number | null;
+  late_minutes: number | null;
+  overtime_minutes: number | null;
+  check_in_note: string | null;
+  check_out_note: string | null;
+  corrected_by: string | null;
+  correction_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  shift?: Shift;
+  user?: Partial<User>;
+};
+
+export type CandidateStatus = "applied" | "screening" | "interview_scheduled" | "technical_round" | "hr_round" | "selected" | "rejected" | "on_hold";
+
+export type Candidate = {
+  id: string;
+  tenant_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string | null;
+  position: string;
+  source: string | null;
+  current_company: string | null;
+  experience_years: number | null;
+  expected_salary: number | null;
+  location: string | null;
+  resume_url: string | null;
+  status: CandidateStatus;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Interview = {
+  id: string;
+  tenant_id: string;
+  candidate_id: string;
+  interviewer_id: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  interview_type: string;
+  round_number: number;
+  status: string;
+  feedback: string | null;
+  rating: number | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  interviewer?: Partial<User>;
+};
+
+export type StatusLogEntry = {
+  id: string;
+  candidate_id: string;
+  from_status: string | null;
+  to_status: string;
+  changed_by: string;
+  note: string | null;
+  created_at: string;
+  changed_by_user?: Partial<User>;
+};
+
 export type Todo = {
   id: string;
   tenant_id: string;

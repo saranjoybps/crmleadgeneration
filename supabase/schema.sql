@@ -100,6 +100,70 @@ exception
   when duplicate_object then null;
 end $$;
 
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'attendance_status') then
+    create type public.attendance_status as enum ('present', 'late', 'half_day', 'absent', 'overtime');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.attendance_status add value if not exists 'present';
+  alter type public.attendance_status add value if not exists 'late';
+  alter type public.attendance_status add value if not exists 'half_day';
+  alter type public.attendance_status add value if not exists 'absent';
+  alter type public.attendance_status add value if not exists 'overtime';
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'candidate_status') then
+    create type public.candidate_status as enum ('applied', 'screening', 'interview_scheduled', 'technical_round', 'hr_round', 'selected', 'rejected', 'on_hold');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.candidate_status add value if not exists 'applied';
+  alter type public.candidate_status add value if not exists 'screening';
+  alter type public.candidate_status add value if not exists 'interview_scheduled';
+  alter type public.candidate_status add value if not exists 'technical_round';
+  alter type public.candidate_status add value if not exists 'hr_round';
+  alter type public.candidate_status add value if not exists 'selected';
+  alter type public.candidate_status add value if not exists 'rejected';
+  alter type public.candidate_status add value if not exists 'on_hold';
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'interview_type') then
+    create type public.interview_type as enum ('screening', 'technical', 'hr', 'final');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.interview_type add value if not exists 'screening';
+  alter type public.interview_type add value if not exists 'technical';
+  alter type public.interview_type add value if not exists 'hr';
+  alter type public.interview_type add value if not exists 'final';
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'interview_status') then
+    create type public.interview_status as enum ('scheduled', 'completed', 'cancelled');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.interview_status add value if not exists 'scheduled';
+  alter type public.interview_status add value if not exists 'completed';
+  alter type public.interview_status add value if not exists 'cancelled';
+exception
+  when duplicate_object then null;
+end $$;
+
 -- ----------
 -- Core tenant and access tables
 -- ----------
@@ -500,6 +564,109 @@ create table if not exists public.todos (
   description text null,
   is_completed boolean not null default false,
   due_date timestamptz null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ----------
+-- Attendance / Shift tables
+-- ----------
+create table if not exists public.shifts (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  start_time time not null,
+  end_time time not null,
+  grace_period_minutes int not null default 5,
+  late_threshold_minutes int not null default 30,
+  half_day_after_minutes int not null default 240,
+  description text null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.user_shift_assignments (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  shift_id uuid not null references public.shifts(id) on delete cascade,
+  effective_from date not null default current_date,
+  effective_to date null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.attendance_records (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  date date not null,
+  shift_id uuid null references public.shifts(id) on delete set null,
+  check_in_time timestamptz null,
+  check_out_time timestamptz null,
+  status attendance_status not null default 'absent',
+  working_minutes int null,
+  late_minutes int null,
+  overtime_minutes int null,
+  check_in_note text null,
+  check_out_note text null,
+  corrected_by uuid null references public.users(id) on delete set null,
+  correction_reason text null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint unique_attendance_per_user_date unique (tenant_id, user_id, date)
+);
+
+-- ----------
+-- Recruitment / Candidate tables
+-- ----------
+create table if not exists public.candidates (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  first_name text not null,
+  last_name text not null,
+  email citext not null,
+  phone text null,
+  position text not null,
+  source text null,
+  current_company text null,
+  experience_years int null,
+  expected_salary decimal null,
+  location text null,
+  resume_url text null,
+  status candidate_status not null default 'applied',
+  notes text null,
+  created_by uuid not null references public.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.candidate_status_log (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  candidate_id uuid not null references public.candidates(id) on delete cascade,
+  from_status candidate_status null,
+  to_status candidate_status not null,
+  changed_by uuid not null references public.users(id) on delete cascade,
+  note text null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.interviews (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  candidate_id uuid not null references public.candidates(id) on delete cascade,
+  interviewer_id uuid not null references public.users(id) on delete cascade,
+  scheduled_at timestamptz not null,
+  duration_minutes int not null default 60,
+  interview_type interview_type not null default 'screening',
+  round_number int not null default 1,
+  status interview_status not null default 'scheduled',
+  feedback text null,
+  rating int null check (rating >= 1 and rating <= 5),
+  notes text null,
+  created_by uuid not null references public.users(id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -999,7 +1166,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments','shifts','user_shift_assignments','attendance_records','candidates','interviews']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -1099,7 +1266,10 @@ insert into public.modules (key, label) values
   ('users', 'User Management'),
   ('departments', 'Departments'),
   ('settings', 'Settings'),
-  ('rbac', 'Roles & Permissions')
+  ('rbac', 'Roles & Permissions'),
+  ('shift', 'Shift Management'),
+  ('attendance', 'Attendance'),
+  ('recruitment', 'Recruitment')
 on conflict (key)
 do update set label = excluded.label;
 
@@ -1366,6 +1536,147 @@ for select using (public.is_tenant_member(tenant_id));
 drop policy if exists time_entries_insert_member on public.time_entries;
 create policy time_entries_insert_member on public.time_entries
 for insert with check (public.is_tenant_member(tenant_id));
+
+-- ----------
+-- Shifts RLS
+-- ----------
+alter table public.shifts enable row level security;
+
+drop policy if exists shifts_select_member on public.shifts;
+create policy shifts_select_member on public.shifts
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists shifts_insert_admin on public.shifts;
+create policy shifts_insert_admin on public.shifts
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists shifts_update_admin on public.shifts;
+create policy shifts_update_admin on public.shifts
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists shifts_delete_admin on public.shifts;
+create policy shifts_delete_admin on public.shifts
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- User Shift Assignments RLS
+-- ----------
+alter table public.user_shift_assignments enable row level security;
+
+drop policy if exists user_shift_assignments_select_member on public.user_shift_assignments;
+create policy user_shift_assignments_select_member on public.user_shift_assignments
+for select using (
+  public.is_tenant_member(tenant_id)
+  and (
+    user_id = public.current_app_user_id()
+    or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  )
+);
+
+drop policy if exists user_shift_assignments_manage_admin on public.user_shift_assignments;
+create policy user_shift_assignments_manage_admin on public.user_shift_assignments
+for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Attendance Records RLS
+-- ----------
+alter table public.attendance_records enable row level security;
+
+drop policy if exists attendance_records_select_own_or_admin on public.attendance_records;
+create policy attendance_records_select_own_or_admin on public.attendance_records
+for select using (
+  public.is_tenant_member(tenant_id)
+  and (
+    user_id = public.current_app_user_id()
+    or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+  )
+);
+
+drop policy if exists attendance_records_checkin on public.attendance_records;
+create policy attendance_records_checkin on public.attendance_records
+for insert with check (
+  public.is_tenant_member(tenant_id)
+  and user_id = public.current_app_user_id()
+);
+
+drop policy if exists attendance_records_checkout_self on public.attendance_records;
+create policy attendance_records_checkout_self on public.attendance_records
+for update using (
+  public.is_tenant_member(tenant_id)
+  and user_id = public.current_app_user_id()
+)
+with check (
+  public.is_tenant_member(tenant_id)
+  and user_id = public.current_app_user_id()
+);
+
+drop policy if exists attendance_records_correct_admin on public.attendance_records;
+create policy attendance_records_correct_admin on public.attendance_records
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists attendance_records_delete_admin on public.attendance_records;
+create policy attendance_records_delete_admin on public.attendance_records
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Candidates RLS
+-- ----------
+alter table public.candidates enable row level security;
+
+drop policy if exists candidates_select_member on public.candidates;
+create policy candidates_select_member on public.candidates
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists candidates_insert_member on public.candidates;
+create policy candidates_insert_member on public.candidates
+for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists candidates_update_admin on public.candidates;
+create policy candidates_update_admin on public.candidates
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists candidates_delete_admin on public.candidates;
+create policy candidates_delete_admin on public.candidates
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Candidate Status Log RLS
+-- ----------
+alter table public.candidate_status_log enable row level security;
+
+drop policy if exists candidate_status_log_select_member on public.candidate_status_log;
+create policy candidate_status_log_select_member on public.candidate_status_log
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists candidate_status_log_insert_member on public.candidate_status_log;
+create policy candidate_status_log_insert_member on public.candidate_status_log
+for insert with check (public.is_tenant_member(tenant_id));
+
+-- ----------
+-- Interviews RLS
+-- ----------
+alter table public.interviews enable row level security;
+
+drop policy if exists interviews_select_member on public.interviews;
+create policy interviews_select_member on public.interviews
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists interviews_insert_member on public.interviews;
+create policy interviews_insert_member on public.interviews
+for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists interviews_update_admin on public.interviews;
+create policy interviews_update_admin on public.interviews
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists interviews_delete_admin on public.interviews;
+create policy interviews_delete_admin on public.interviews
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
 
 -- ----------
 -- Todos RLS
