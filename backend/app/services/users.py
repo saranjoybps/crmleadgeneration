@@ -148,6 +148,10 @@ class UserService:
 
         auth_user_id = cls._extract_auth_user_id(created_auth)
         if not auth_user_id:
+            try:
+                supabase.auth.admin.delete_user(created_auth.user.id)
+            except Exception:
+                logger.exception("[USER_CREATE][SERVICE][%s] failed to clean up orphaned auth user", dbg)
             raise HTTPException(status_code=500, detail="Auth user creation succeeded but no user id was returned")
 
         try:
@@ -155,11 +159,19 @@ class UserService:
                 {"auth_user_id": auth_user_id, "email": email, "full_name": payload.full_name, "avatar_url": payload.avatar_url}
             ).execute()
         except APIError as exc:
-            logger.exception("[USER_CREATE][SERVICE][%s] users insert failed", dbg)
+            logger.exception("[USER_CREATE][SERVICE][%s] users insert failed, cleaning up auth user", dbg)
+            try:
+                supabase.auth.admin.delete_user(auth_user_id)
+            except Exception:
+                logger.exception("[USER_CREATE][SERVICE][%s] failed to clean up orphaned auth user", dbg)
             raise HTTPException(status_code=500, detail=f"Users insert failed: {exc.message}") from exc
         
         user_row = (user.data or [None])[0]
         if not user_row:
+            try:
+                supabase.auth.admin.delete_user(auth_user_id)
+            except Exception:
+                logger.exception("[USER_CREATE][SERVICE][%s] failed to clean up orphaned auth user", dbg)
             raise HTTPException(status_code=500, detail="Failed to create app user record")
 
         try:
@@ -174,7 +186,11 @@ class UserService:
                 on_conflict="tenant_id,user_id",
             ).execute()
         except APIError as exc:
-            logger.exception("[USER_CREATE][SERVICE][%s] user_tenant_roles upsert failed", dbg)
+            logger.exception("[USER_CREATE][SERVICE][%s] user_tenant_roles upsert failed, cleaning up auth user", dbg)
+            try:
+                supabase.auth.admin.delete_user(auth_user_id)
+            except Exception:
+                logger.exception("[USER_CREATE][SERVICE][%s] failed to clean up orphaned auth user", dbg)
             raise HTTPException(status_code=500, detail=f"Tenant role link failed: {exc.message}") from exc
         
         return user_row

@@ -104,7 +104,7 @@ class AttendanceService:
 
     @staticmethod
     def update_shift(supabase: Client, shift_id: str, payload: ShiftUpdate, ctx: RequestContext):
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "start_time" in update_data and update_data["start_time"]:
             update_data["start_time"] = update_data["start_time"].isoformat()
         if "end_time" in update_data and update_data["end_time"]:
@@ -170,7 +170,7 @@ class AttendanceService:
 
     @staticmethod
     def update_assignment(supabase: Client, assignment_id: str, payload, ctx: RequestContext):
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "effective_from" in update_data and update_data["effective_from"]:
             update_data["effective_from"] = update_data["effective_from"].isoformat()
         if "effective_to" in update_data and update_data["effective_to"]:
@@ -383,7 +383,7 @@ class AttendanceService:
 
     @staticmethod
     def update_record(supabase: Client, record_id: str, payload: AttendanceRecordUpdate, ctx: RequestContext):
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         note = update_data.pop("note", None)
         if note:
             update_data["check_in_note"] = note

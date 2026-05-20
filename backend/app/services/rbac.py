@@ -354,7 +354,7 @@ class RBACService:
                 supabase.table("roles")
                 .select("id")
                 .eq("key", role_key)
-                .or_(f"tenant_id.eq.{ctx.tenant_id},tenant_id.is.null")
+                .eq("tenant_id", ctx.tenant_id)
                 .execute()
             )
             sibling_role_ids = [r["id"] for r in (sibling_roles_res.data or []) if r.get("id")]

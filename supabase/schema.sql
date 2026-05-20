@@ -637,7 +637,7 @@ create table if not exists public.candidates (
   resume_url text null,
   status candidate_status not null default 'applied',
   notes text null,
-  created_by uuid not null references public.users(id) on delete cascade,
+  created_by uuid not null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -648,7 +648,7 @@ create table if not exists public.candidate_status_log (
   candidate_id uuid not null references public.candidates(id) on delete cascade,
   from_status candidate_status null,
   to_status candidate_status not null,
-  changed_by uuid not null references public.users(id) on delete cascade,
+  changed_by uuid not null references public.users(id) on delete set null,
   note text null,
   created_at timestamptz not null default now()
 );
@@ -657,7 +657,7 @@ create table if not exists public.interviews (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   candidate_id uuid not null references public.candidates(id) on delete cascade,
-  interviewer_id uuid not null references public.users(id) on delete cascade,
+  interviewer_id uuid not null references public.users(id) on delete set null,
   scheduled_at timestamptz not null,
   duration_minutes int not null default 60,
   interview_type interview_type not null default 'screening',
@@ -666,7 +666,7 @@ create table if not exists public.interviews (
   feedback text null,
   rating int null check (rating >= 1 and rating <= 5),
   notes text null,
-  created_by uuid not null references public.users(id) on delete cascade,
+  created_by uuid not null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -677,10 +677,23 @@ create table if not exists public.interviews (
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
-as $$ begin
-  new.updated_at := now();
+as $$
+declare
+  col_exists boolean;
+begin
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = tg_table_schema
+      and table_name = tg_table_name
+      and column_name = 'updated_at'
+  ) into col_exists;
+
+  if col_exists then
+    new.updated_at := now();
+  end if;
   return new;
-end; $$;
+end;
+$$;
 
 create or replace function public.current_app_user_id()
 returns uuid
@@ -1147,6 +1160,10 @@ begin
     raise exception 'Invite has expired';
   end if;
 
+  if lower(trim(auth.email())) != lower(trim(v_invite.email)) then
+    raise exception 'This invite was sent to a different email address';
+  end if;
+
   insert into public.user_tenant_roles (tenant_id, user_id, role_id, is_active)
   values (v_invite.tenant_id, v_actor, v_invite.role_id, true)
   on conflict on constraint user_tenant_roles_unique
@@ -1166,7 +1183,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments','shifts','user_shift_assignments','attendance_records','candidates','interviews']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments','shifts','user_shift_assignments','attendance_records','candidates','interviews','roles','role_permissions']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -1292,7 +1309,7 @@ alter table public.time_entries enable row level security;
 
 drop policy if exists roles_select_authenticated on public.roles;
 create policy roles_select_authenticated on public.roles
-for select to authenticated using (true);
+for select using (public.is_tenant_member(tenant_id) or tenant_id is null);
 
 drop policy if exists tenants_select_member on public.tenants;
 create policy tenants_select_member on public.tenants
@@ -1522,6 +1539,11 @@ create policy ticket_comments_update_self on public.ticket_comments
 for update using (user_id = public.current_app_user_id())
 with check (user_id = public.current_app_user_id());
 
+drop policy if exists ticket_comments_update_admin on public.ticket_comments;
+create policy ticket_comments_update_admin on public.ticket_comments
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']::text[]))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']::text[]));
+
 drop policy if exists ticket_comments_delete_self_or_admin on public.ticket_comments;
 create policy ticket_comments_delete_self_or_admin on public.ticket_comments
 for delete using (
@@ -1536,6 +1558,24 @@ for select using (public.is_tenant_member(tenant_id));
 drop policy if exists time_entries_insert_member on public.time_entries;
 create policy time_entries_insert_member on public.time_entries
 for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists time_entries_update_self_or_admin on public.time_entries;
+create policy time_entries_update_self_or_admin on public.time_entries
+for update using (
+  user_id = public.current_app_user_id()
+  or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+)
+with check (
+  user_id = public.current_app_user_id()
+  or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+);
+
+drop policy if exists time_entries_delete_self_or_admin on public.time_entries;
+create policy time_entries_delete_self_or_admin on public.time_entries
+for delete using (
+  user_id = public.current_app_user_id()
+  or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+);
 
 -- ----------
 -- Shifts RLS
@@ -2314,3 +2354,173 @@ with check (
 
 insert into public.modules (key, label) values ('vault', 'Vault')
 on conflict (key) do update set label = excluded.label;
+
+insert into public.modules (key, label) values ('documents', 'Documents')
+on conflict (key) do update set label = excluded.label;
+
+-- ----------
+-- Documents
+-- ----------
+create table if not exists public.document_types (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete cascade,
+  name text not null,
+  key text not null,
+  description text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  constraint document_types_key_tenant_unique unique (tenant_id, key)
+);
+
+create table if not exists public.document_templates (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  document_type_id uuid references public.document_types(id) on delete set null,
+  content text not null,
+  variables jsonb not null default '[]'::jsonb,
+  is_active boolean not null default true,
+  created_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.generated_documents (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  template_id uuid references public.document_templates(id) on delete set null,
+  document_type_id uuid references public.document_types(id) on delete set null,
+  employee_id uuid not null references public.users(id),
+  title text not null,
+  content_data jsonb not null default '{}'::jsonb,
+  generated_by uuid not null references public.users(id),
+  generated_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Ensure updated_at columns exist for existing tables (safe re-runs)
+alter table public.document_templates add column if not exists updated_at timestamptz not null default now();
+alter table public.generated_documents add column if not exists updated_at timestamptz not null default now();
+
+-- Seed global document types
+insert into public.document_types (tenant_id, name, key) values
+  (null, 'Offer Letter', 'offer_letter'),
+  (null, 'Appointment Letter', 'appointment_letter'),
+  (null, 'Payslip', 'payslip'),
+  (null, 'Experience Letter', 'experience_letter'),
+  (null, 'Relieving Letter', 'relieving_letter'),
+  (null, 'Promotion Letter', 'promotion_letter'),
+  (null, 'Increment Letter', 'increment_letter'),
+  (null, 'NDA / Agreement', 'nda'),
+  (null, 'ID Proof', 'id_proof'),
+  (null, 'Certificate', 'certificate'),
+  (null, 'PF/ESI Document', 'pf_esi'),
+  (null, 'Tax Document', 'tax_document')
+on conflict (tenant_id, key) do nothing;
+
+-- Documents RLS
+alter table public.document_types enable row level security;
+alter table public.document_templates enable row level security;
+alter table public.generated_documents enable row level security;
+
+drop policy if exists document_types_select_member on public.document_types;
+create policy document_types_select_member on public.document_types
+for select using (public.is_tenant_member(tenant_id) or tenant_id is null);
+
+drop policy if exists document_types_insert_admin on public.document_types;
+create policy document_types_insert_admin on public.document_types
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists document_types_update_admin on public.document_types;
+create policy document_types_update_admin on public.document_types
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists document_types_delete_admin on public.document_types;
+create policy document_types_delete_admin on public.document_types
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists document_templates_select_member on public.document_templates;
+create policy document_templates_select_member on public.document_templates
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists document_templates_insert_member on public.document_templates;
+create policy document_templates_insert_member on public.document_templates
+for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists document_templates_update_admin on public.document_templates;
+create policy document_templates_update_admin on public.document_templates
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists document_templates_delete_admin on public.document_templates;
+create policy document_templates_delete_admin on public.document_templates
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists generated_documents_select_member on public.generated_documents;
+create policy generated_documents_select_member on public.generated_documents
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists generated_documents_insert_member on public.generated_documents;
+create policy generated_documents_insert_member on public.generated_documents
+for insert with check (public.is_tenant_member(tenant_id));
+
+drop policy if exists generated_documents_delete_admin on public.generated_documents;
+create policy generated_documents_delete_admin on public.generated_documents
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- Document updated_at triggers
+drop trigger if exists trg_document_templates_updated_at on public.document_templates;
+create trigger trg_document_templates_updated_at before update on public.document_templates
+for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_generated_documents_updated_at on public.generated_documents;
+create trigger trg_generated_documents_updated_at before update on public.generated_documents
+for each row execute function public.touch_updated_at();
+
+-- Performance indexes for frequently queried foreign keys
+create index if not exists idx_role_permissions_tenant on public.role_permissions(tenant_id);
+create index if not exists idx_role_permissions_role on public.role_permissions(role_id);
+create index if not exists idx_role_permissions_module on public.role_permissions(module_id);
+create index if not exists idx_role_permissions_lookup on public.role_permissions(tenant_id, role_id, module_id);
+
+create index if not exists idx_user_tenant_roles_role on public.user_tenant_roles(role_id);
+create index if not exists idx_tenant_invites_role on public.tenant_invites(role_id);
+create index if not exists idx_tenant_invites_invited_by on public.tenant_invites(invited_by);
+create index if not exists idx_milestones_tenant on public.milestones(tenant_id);
+create index if not exists idx_milestones_project on public.milestones(project_id);
+create index if not exists idx_projects_department on public.projects(department_id);
+create index if not exists idx_projects_created_by on public.projects(created_by);
+create index if not exists idx_project_members_tenant on public.project_members(tenant_id);
+create index if not exists idx_tickets_milestone on public.tickets(milestone_id);
+create index if not exists idx_ticket_watchers_tenant on public.ticket_watchers(tenant_id);
+create index if not exists idx_ticket_watchers_ticket on public.ticket_watchers(ticket_id);
+create index if not exists idx_tasks_department on public.tasks(department_id);
+create index if not exists idx_tasks_created_by on public.tasks(created_by);
+create index if not exists idx_task_dependencies_tenant on public.task_dependencies(tenant_id);
+create index if not exists idx_task_dependencies_task on public.task_dependencies(task_id);
+create index if not exists idx_task_dependencies_depends_on on public.task_dependencies(depends_on_task_id);
+create index if not exists idx_time_entries_tenant on public.time_entries(tenant_id);
+create index if not exists idx_time_entries_task on public.time_entries(task_id);
+create index if not exists idx_time_entries_user on public.time_entries(user_id);
+create index if not exists idx_ticket_comments_tenant on public.ticket_comments(tenant_id);
+create index if not exists idx_ticket_comments_ticket on public.ticket_comments(ticket_id);
+create index if not exists idx_ticket_comments_user on public.ticket_comments(user_id);
+create index if not exists idx_shifts_tenant on public.shifts(tenant_id);
+create index if not exists idx_user_shift_assignments_tenant on public.user_shift_assignments(tenant_id);
+create index if not exists idx_user_shift_assignments_user on public.user_shift_assignments(user_id);
+create index if not exists idx_user_shift_assignments_shift on public.user_shift_assignments(shift_id);
+create index if not exists idx_attendance_records_shift on public.attendance_records(shift_id);
+create index if not exists idx_attendance_records_corrected_by on public.attendance_records(corrected_by);
+create index if not exists idx_candidates_tenant on public.candidates(tenant_id);
+create index if not exists idx_candidate_status_log_tenant on public.candidate_status_log(tenant_id);
+create index if not exists idx_candidate_status_log_candidate on public.candidate_status_log(candidate_id);
+create index if not exists idx_interviews_tenant on public.interviews(tenant_id);
+create index if not exists idx_interviews_candidate on public.interviews(candidate_id);
+create index if not exists idx_vault_credentials_created_by on public.vault_credentials(created_by);
+create index if not exists idx_vault_credential_shares_credential on public.vault_credential_shares(credential_id);
+create index if not exists idx_document_templates_tenant on public.document_templates(tenant_id);
+create index if not exists idx_document_templates_type on public.document_templates(document_type_id);
+create index if not exists idx_generated_documents_tenant on public.generated_documents(tenant_id);
+create index if not exists idx_generated_documents_employee on public.generated_documents(employee_id);
+create index if not exists idx_generated_documents_type on public.generated_documents(document_type_id);

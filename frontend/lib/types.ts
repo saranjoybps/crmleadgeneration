@@ -250,3 +250,45 @@ export type Todo = {
   updated_at: string;
 };
 
+export type DocumentType = {
+  id: string;
+  tenant_id: string | null;
+  name: string;
+  key: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type DocumentTemplate = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  document_type_id: string | null;
+  content: string;
+  variables: Array<{ key: string; label: string; type: string }>;
+  is_active: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  document_type?: Partial<DocumentType>;
+};
+
+export type GeneratedDocument = {
+  id: string;
+  tenant_id: string;
+  template_id: string | null;
+  document_type_id: string | null;
+  employee_id: string;
+  title: string;
+  content_data: Record<string, string>;
+  generated_by: string;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+  template?: Partial<DocumentTemplate>;
+  document_type?: Partial<DocumentType>;
+  employee?: Partial<User>;
+  generated_by_user?: Partial<User>;
+};
+

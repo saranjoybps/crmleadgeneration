@@ -47,6 +47,11 @@ async function createCredential(formData: FormData) {
   "use server";
   const orgSlug = String(formData.get("organization_slug") ?? "");
   const path = `/o/${orgSlug}/dashboard/vault`;
+
+  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>("/api/v1/auth/permissions", { orgSlug });
+  const canCreate = permRes.data?.modules.find((m) => m.key === "vault")?.permissions.can_create;
+  if (!canCreate) redirect(`${path}?error=${encodeURIComponent("You do not have permission to create credentials.")}`);
+
   const body = {
     label: String(formData.get("label") ?? ""),
     username: String(formData.get("username") ?? "") || null,
@@ -69,6 +74,11 @@ async function updateCredential(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "");
   const credentialId = String(formData.get("credential_id") ?? "");
   const path = `/o/${orgSlug}/dashboard/vault`;
+
+  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", { orgSlug });
+  const canEdit = permRes.data?.modules.find((m) => m.key === "vault")?.permissions.can_edit;
+  if (!canEdit) redirect(`${path}?error=${encodeURIComponent("You do not have permission to update credentials.")}`);
+
   const body = {
     label: String(formData.get("label") ?? ""),
     username: String(formData.get("username") ?? "") || null,
@@ -91,6 +101,11 @@ async function deleteCredential(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "");
   const credentialId = String(formData.get("credential_id") ?? "");
   const path = `/o/${orgSlug}/dashboard/vault`;
+
+  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>("/api/v1/auth/permissions", { orgSlug });
+  const canDelete = permRes.data?.modules.find((m) => m.key === "vault")?.permissions.can_delete;
+  if (!canDelete) redirect(`${path}?error=${encodeURIComponent("You do not have permission to delete credentials.")}`);
+
   const { error } = await apiRequest(`/api/v1/vault/${encodeURIComponent(credentialId)}`, { method: "DELETE", orgSlug });
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
@@ -102,6 +117,11 @@ async function updateShare(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "");
   const credentialId = String(formData.get("credential_id") ?? "");
   const path = `/o/${orgSlug}/dashboard/vault?modal=share&credential_id=${credentialId}`;
+
+  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", { orgSlug });
+  const canEdit = permRes.data?.modules.find((m) => m.key === "vault")?.permissions.can_edit;
+  if (!canEdit) redirect(`${path}&error=${encodeURIComponent("You do not have permission to share credentials.")}`);
+
   const body = {
     user_id: String(formData.get("user_id") ?? ""),
     access: String(formData.get("access") ?? "grant"),
@@ -139,7 +159,7 @@ export default async function VaultPage({ params, searchParams }: VaultPageProps
   const users = usersRes.data ?? [];
   const selected = credentials.find((c) => c.id === query.credential_id);
   const detailRes = selected && query.reveal === "1"
-    ? await apiRequest<CredentialRow>(`/api/v1/vault/${encodeURIComponent(selected.id)}?reveal_password=true`, { orgSlug })
+    ? await apiRequest<CredentialRow>(`/api/v1/vault/${encodeURIComponent(selected.id)}`, { orgSlug, headers: { "X-Reveal-Password": "true" } })
     : null;
   const selectedDetail = (detailRes?.data as CredentialRow | null) ?? selected ?? null;
   const sharesRes = query.modal === "share" && selected

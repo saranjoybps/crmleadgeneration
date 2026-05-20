@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from functools import lru_cache
 
 from dotenv import load_dotenv
 
@@ -11,8 +12,11 @@ class Settings:
     supabase_service_key: str
     allowed_origins: list[str]
     vault_encryption_key: str
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
 
 
+@lru_cache
 def get_settings() -> Settings:
     env_path = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(env_path, override=False)
@@ -23,4 +27,6 @@ def get_settings() -> Settings:
         supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", ""),
         allowed_origins=allowed_origins,
         vault_encryption_key=os.getenv("VAULT_ENCRYPTION_KEY", ""),
+        openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
     )

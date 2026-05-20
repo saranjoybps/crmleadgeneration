@@ -112,7 +112,7 @@ class ProjectService:
         allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
         if allowed_project_ids is not None and project_id not in allowed_project_ids:
             raise HTTPException(status_code=404, detail="Project not found")
-        update_payload = payload.model_dump(exclude_none=True, exclude={"department_ids"})
+        update_payload = payload.model_dump(exclude_unset=True, exclude={"department_ids"})
         if next_department_ids is not None:
             update_payload["department_id"] = next_department_ids[0]
         updated = (

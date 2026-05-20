@@ -12,7 +12,7 @@ class WorkspaceService:
 
     @staticmethod
     def update_workspace(supabase: Client, payload: WorkspaceUpdate, ctx: RequestContext):
-        updated = supabase.table("tenants").update(payload.model_dump(exclude_none=True)).eq("id", ctx.tenant_id).execute()
+        updated = supabase.table("tenants").update(payload.model_dump(exclude_unset=True)).eq("id", ctx.tenant_id).execute()
         row = (updated.data or [None])[0]
         if not row:
             raise HTTPException(status_code=404, detail="Workspace not found")

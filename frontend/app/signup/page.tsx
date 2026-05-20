@@ -25,7 +25,16 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
           name="password"
           type="password"
           required
+          minLength={8}
           placeholder="Password"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+        />
+        <input
+          name="confirm_password"
+          type="password"
+          required
+          minLength={8}
+          placeholder="Confirm password"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
         />
         <button type="submit" className="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">

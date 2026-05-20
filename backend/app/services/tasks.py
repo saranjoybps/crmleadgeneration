@@ -182,7 +182,7 @@ class TaskService:
         try:
             # Explicitly extract fields to ensure they are updated even if 
             # they aren't fully mapped in the Pydantic TaskUpdate schema.
-            update_data = payload.model_dump(exclude_none=True)
+            update_data = payload.model_dump(exclude_unset=True)
             
             # Force priority and due_date if they exist in the payload
             priority_val = getattr(payload, "priority", None)

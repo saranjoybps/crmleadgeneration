@@ -51,7 +51,7 @@ class TodoService:
     def update_todo(supabase: Client, todo_id: str, payload: TodoUpdate, ctx: RequestContext):
         # RLS will handle basic security, but we can add extra checks if needed.
         # For now, we rely on RLS.
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "due_date" in update_data and update_data["due_date"]:
             update_data["due_date"] = update_data["due_date"].isoformat()
 

@@ -15,7 +15,7 @@
   --border-soft: #e2e8f0;
   --text-main: #0f172a;
   --text-muted: #475569;
-  --font-sans: "Satoshi", "Manrope", "Nunito Sans", "Segoe UI", sans-serif;
+  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
 }
 
 [data-theme="dark"] {

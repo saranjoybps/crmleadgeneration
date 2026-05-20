@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeError } from "@/lib/utils";
 
 export type ApiResponse<T> = {
   data: T | null;
@@ -35,9 +36,13 @@ export async function apiRequest<T>(
     body?: any;
     orgSlug?: string;
     cache?: RequestCache;
+    headers?: Record<string, string>;
   } = {}
 ): Promise<ApiResponse<T>> {
   const { apiBase, headers } = await getApiContext(options.orgSlug);
+  if (options.headers) {
+    Object.assign(headers, options.headers);
+  }
 
   if (!apiBase) {
     return { data: null, error: "API base URL not configured." };
@@ -56,7 +61,7 @@ export async function apiRequest<T>(
     if (!resp.ok) {
       return {
         data: null,
-        error: json.error?.message || json.detail || `API request failed (${resp.status})`,
+        error: sanitizeError(json.error?.message || json.detail || `API request failed (${resp.status})`),
       };
     }
 
@@ -68,7 +73,7 @@ export async function apiRequest<T>(
   } catch (err) {
     return {
       data: null,
-      error: err instanceof Error ? err.message : "Network error",
+      error: err instanceof Error ? sanitizeError(err.message) : "An unexpected error occurred. Please try again.",
     };
   }
 }

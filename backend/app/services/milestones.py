@@ -96,7 +96,7 @@ class MilestoneService:
                 raise HTTPException(status_code=403, detail="Forbidden for this project")
         updated = (
             supabase.table("milestones")
-            .update(payload.model_dump(exclude_none=True))
+            .update(payload.model_dump(exclude_unset=True))
             .eq("id", milestone_id)
             .eq("tenant_id", ctx.tenant_id)
             .execute()

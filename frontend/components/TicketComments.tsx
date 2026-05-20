@@ -96,7 +96,7 @@ export function TicketComments({ ticketId, orgSlug, currentUserId }: { ticketId:
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-main">{resolveEmail(c)}</p>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted">May 11, 2026</span>
+                    <span className="text-[10px] text-muted">{new Date(c.created_at).toLocaleDateString()}</span>
                     {c.user_id === currentUserId && (
                       <button onClick={() => handleDelete(c.id)} className="opacity-0 group-hover:opacity-100 text-red-500 transition-opacity">
                         <Trash2 className="h-3 w-3" />

@@ -117,7 +117,7 @@ class TicketService:
                 raise HTTPException(status_code=404, detail="Ticket not found")
         
         try:
-            update_data = payload.model_dump(exclude_none=True)
+            update_data = payload.model_dump(exclude_unset=True)
             
             if hasattr(payload, "priority") and payload.priority:
                 update_data["priority"] = payload.priority

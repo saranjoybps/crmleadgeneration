@@ -85,7 +85,7 @@ class RecruitmentService:
 
     @staticmethod
     def update_candidate(supabase: Client, candidate_id: str, payload: CandidateUpdate, ctx: RequestContext):
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "expected_salary" in update_data and update_data["expected_salary"] is not None:
             update_data["expected_salary"] = float(update_data["expected_salary"])
 
@@ -191,7 +191,7 @@ class RecruitmentService:
 
     @staticmethod
     def update_interview(supabase: Client, interview_id: str, payload: InterviewUpdate, ctx: RequestContext):
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "scheduled_at" in update_data and update_data["scheduled_at"]:
             update_data["scheduled_at"] = update_data["scheduled_at"].isoformat()
 

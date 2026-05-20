@@ -1,4 +1,4 @@
-import { Briefcase, Ticket, CheckSquare, Users, ArrowRight, ListChecks } from "lucide-react";
+import { Briefcase, Ticket, CheckSquare, ArrowRight, ListChecks } from "lucide-react";
 import Link from "next/link";
 
 import { apiRequest } from "@/lib/api-server";
@@ -17,20 +17,6 @@ type DashboardSummary = {
 export default async function DashboardPage({ params }: { params: Promise<{ orgSlug: string }> }) {
   const { orgSlug } = await params;
   const org = await getOrganizationContextOrRedirect(orgSlug);
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
-  const canViewDashboard = permissionsResponse.data?.modules.find((m) => m.key === "dashboard")?.permissions.can_view ?? false;
-  console.log("[UI][DASHBOARD][CHECK]", {
-    orgSlug,
-    role: permissionsResponse.data?.modules ? org.role : "unknown",
-    canViewDashboard,
-    dashboardPermissions: permissionsResponse.data?.modules.find((m) => m.key === "dashboard")?.permissions ?? null,
-    permissionsApiError: permissionsResponse.error ?? null,
-  });
-  if (!canViewDashboard) {
-    return <p className="p-6 text-red-600">You do not have permission to view dashboard.</p>;
-  }
 
   const { data: summary } = await apiRequest<DashboardSummary>("/api/v1/dashboard/summary", { orgSlug });
 

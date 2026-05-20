@@ -3,8 +3,7 @@ import { redirect } from "next/navigation";
 import { getOrCreatePrimaryOrganization } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  void children;
+export default async function DashboardLayout() {
   const supabase = await createClient();
   const {
     data: { user },

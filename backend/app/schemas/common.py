@@ -1,6 +1,10 @@
+import re
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+_EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
 class ApiError(BaseModel):
@@ -22,6 +26,18 @@ class UserCreate(BaseModel):
     password: str
     role_key: str = "member"
     avatar_url: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("Email is required")
+        if len(v) > 320:
+            raise ValueError("Email is too long")
+        if not _EMAIL_PATTERN.match(v):
+            raise ValueError("Invalid email format")
+        return v
 
 
 class UserUpdate(BaseModel):
@@ -51,6 +67,18 @@ class WorkspaceUpdate(BaseModel):
 class InviteCreate(BaseModel):
     email: str
     role_key: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("Email is required")
+        if len(v) > 320:
+            raise ValueError("Email is too long")
+        if not _EMAIL_PATTERN.match(v):
+            raise ValueError("Invalid email format")
+        return v
 
 
 class RoleAssignment(BaseModel):

@@ -13,24 +13,29 @@ class DashboardService:
 
         if allowed_project_ids is not None:
             projects_count = len(allowed_project_ids)
-            tickets_count = (
-                supabase.table("tickets")
-                .select("id", count="exact")
-                .eq("tenant_id", ctx.tenant_id)
-                .eq("status", "open")
-                .in_("project_id", list(allowed_project_ids) or ["00000000-0000-0000-0000-000000000000"])
-                .execute()
-                .count
-            )
-            tasks_count = (
-                supabase.table("tasks")
-                .select("id", count="exact")
-                .eq("tenant_id", ctx.tenant_id)
-                .not_.eq("status", "closed")
-                .in_("project_id", list(allowed_project_ids) or ["00000000-0000-0000-0000-000000000000"])
-                .execute()
-                .count
-            )
+            project_id_list = list(allowed_project_ids)
+            if not project_id_list:
+                tickets_count = 0
+                tasks_count = 0
+            else:
+                tickets_count = (
+                    supabase.table("tickets")
+                    .select("id", count="exact")
+                    .eq("tenant_id", ctx.tenant_id)
+                    .eq("status", "open")
+                    .in_("project_id", project_id_list)
+                    .execute()
+                    .count
+                )
+                tasks_count = (
+                    supabase.table("tasks")
+                    .select("id", count="exact")
+                    .eq("tenant_id", ctx.tenant_id)
+                    .not_.eq("status", "closed")
+                    .in_("project_id", project_id_list)
+                    .execute()
+                    .count
+                )
         else:
             # Admin/owner sees all
             projects_count = (

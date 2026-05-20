@@ -73,8 +73,29 @@ class VaultService:
             supabase.table("vault_credentials")
             .select("*, creator:users!vault_credentials_created_by_fkey(id,email,full_name)")
             .eq("tenant_id", ctx.tenant_id)
-            .order("updated_at", desc=True)
         )
+
+        # Non-owner users only see own + shared credentials.
+        # Filter at DB level to avoid leaking total credential count.
+        if ctx.role_key != "owner":
+            shared_ids = [
+                s["credential_id"]
+                for s in (
+                    supabase.table("vault_credential_shares")
+                    .select("credential_id")
+                    .eq("tenant_id", ctx.tenant_id)
+                    .eq("user_id", ctx.app_user_id)
+                    .eq("access", "grant")
+                    .execute()
+                    .data
+                    or []
+                )
+            ]
+            if shared_ids:
+                query = query.or_(f"created_by.eq.{ctx.app_user_id},id.in.(%s)" % ",".join(shared_ids))
+            else:
+                query = query.eq("created_by", ctx.app_user_id)
+
         if q:
             query = query.or_(f"label.ilike.%{q}%,username.ilike.%{q}%,email_id.ilike.%{q}%,login_url.ilike.%{q}%")
         if category:
@@ -83,22 +104,8 @@ class VaultService:
             query = query.eq("status", status)
         if tag:
             query = query.contains("tags", [tag])
+        query = query.order("updated_at", desc=True)
         rows = query.execute().data or []
-
-        # Non-owner users only see own + shared credentials.
-        if ctx.role_key != "owner":
-            owned_ids = {r["id"] for r in rows if r.get("created_by") == ctx.app_user_id}
-            shared = (
-                supabase.table("vault_credential_shares")
-                .select("credential_id")
-                .eq("tenant_id", ctx.tenant_id)
-                .eq("user_id", ctx.app_user_id)
-                .eq("access", "grant")
-                .execute()
-            )
-            shared_ids = {s["credential_id"] for s in (shared.data or [])}
-            allow_ids = owned_ids.union(shared_ids)
-            rows = [r for r in rows if r["id"] in allow_ids]
 
         for row in rows:
             row["password_masked"] = "********"
@@ -173,7 +180,7 @@ class VaultService:
         if ctx.role_key != "owner" and str(existing.get("created_by")) != str(ctx.app_user_id):
             raise HTTPException(status_code=403, detail="Only creator or owner can update credential")
 
-        update_data = payload.model_dump(exclude_none=True)
+        update_data = payload.model_dump(exclude_unset=True)
         if "password" in update_data:
             raw_password = update_data.pop("password")
             update_data["password_encrypted"] = VaultService._encrypt_password(raw_password)

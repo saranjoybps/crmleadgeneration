@@ -85,8 +85,11 @@ async function updateTodo(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Todo updated.")}`);
 }
 
-async function toggleTodo(orgSlug: string, todoId: string, currentStatus: boolean) {
+async function toggleTodo(formData: FormData) {
   "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const todoId = String(formData.get("todo_id") ?? "").trim();
+  const currentStatus = formData.get("is_completed") === "true";
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
     orgSlug,
     cache: "no-store",
@@ -216,10 +219,10 @@ export default async function TodosPage({ params, searchParams }: TodosPageProps
             <Card key={todo.id} className={cn("group p-4 transition-all hover:border-violet-300", todo.is_completed && "bg-slate-50/50 opacity-75")}>
               <div className="flex items-center gap-4">
                 {todosPerm.can_edit ? (
-                  <form action={async () => {
-                    "use server";
-                    await toggleTodo(orgSlug, todo.id, todo.is_completed);
-                  }}>
+                  <form action={toggleTodo}>
+                    <input type="hidden" name="organization_slug" value={orgSlug} />
+                    <input type="hidden" name="todo_id" value={todo.id} />
+                    <input type="hidden" name="is_completed" value={String(todo.is_completed)} />
                     <button type="submit" className="focus:outline-none">
                       {todo.is_completed ? (
                         <CheckCircle2 className="h-6 w-6 text-emerald-500 fill-emerald-50" />

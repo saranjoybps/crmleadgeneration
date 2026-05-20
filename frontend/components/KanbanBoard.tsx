@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { 
   DndContext, 
@@ -63,6 +63,7 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [tasks, setTasks] = useState(initialTasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const pendingStatusRef = useRef<Map<string, string>>(new Map());
 
   // Sync internal state when initialTasks changes from server
   useEffect(() => {
@@ -114,6 +115,7 @@ export function KanbanBoard({
       const overTask = tasks.find(t => t.id === overId)!;
 
       if (activeTask.status !== overTask.status) {
+        pendingStatusRef.current.set(activeId as string, overTask.status);
         setTasks(prev => {
           const activeIndex = prev.findIndex(t => t.id === activeId);
           const overIndex = prev.findIndex(t => t.id === overId);
@@ -130,6 +132,7 @@ export function KanbanBoard({
     if (isActiveATask && isOverAColumn) {
       const activeTask = tasks.find(t => t.id === activeId)!;
       if (activeTask.status !== overId) {
+        pendingStatusRef.current.set(activeId as string, overId as string);
         setTasks(prev => {
           const activeIndex = prev.findIndex(t => t.id === activeId);
           const updatedTasks = [...prev];
@@ -147,20 +150,25 @@ export function KanbanBoard({
     if (!over) return;
 
     const activeId = active.id;
-    const overId = over.id;
 
     // Use initialTasks to find the original state of the task
     const originalTask = initialTasks.find(t => t.id === activeId);
     if (!originalTask) return;
 
-    // Determine new status from the current (potentially moved) tasks state
-    const currentTask = tasks.find(t => t.id === activeId);
-    if (!currentTask) return;
+    // Use pendingStatusRef (set synchronously during handleDragOver) instead of
+    // the tasks state, which may not have committed the dragOver updates yet.
+    const pendingStatus = pendingStatusRef.current.get(activeId as string);
+    pendingStatusRef.current.clear();
 
-    const newStatus = currentTask.status;
+    const newStatus = pendingStatus || originalTask.status;
 
     if (newStatus !== originalTask.status) {
-      await onStatusChange(activeId as string, newStatus);
+      try {
+        await onStatusChange(activeId as string, newStatus);
+      } catch {
+        // Revert on failure
+        setTasks(initialTasks);
+      }
     }
   };
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 
 from app.api.utils import response
 from app.core.deps import RequestContext, require_module_permission
@@ -25,7 +25,7 @@ def list_credentials(
 @router.get("/{credential_id}")
 def get_credential(
     credential_id: str,
-    reveal_password: bool = Query(default=False),
+    reveal_password: bool = Header(default=False, alias="X-Reveal-Password"),
     ctx: RequestContext = Depends(require_module_permission("vault", "view")),
 ):
     supabase = get_supabase_client(access_token=ctx.access_token)
