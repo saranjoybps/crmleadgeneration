@@ -112,6 +112,22 @@ do $$ begin
   alter type public.attendance_status add value if not exists 'half_day';
   alter type public.attendance_status add value if not exists 'absent';
   alter type public.attendance_status add value if not exists 'overtime';
+  alter type public.attendance_status add value if not exists 'on_leave';
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'leave_status') then
+    create type public.leave_status as enum ('pending', 'approved', 'rejected', 'cancelled');
+  end if;
+end $$;
+
+do $$ begin
+  alter type public.leave_status add value if not exists 'pending';
+  alter type public.leave_status add value if not exists 'approved';
+  alter type public.leave_status add value if not exists 'rejected';
+  alter type public.leave_status add value if not exists 'cancelled';
 exception
   when duplicate_object then null;
 end $$;
@@ -616,6 +632,70 @@ create table if not exists public.attendance_records (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint unique_attendance_per_user_date unique (tenant_id, user_id, date)
+);
+
+-- ----------
+-- Leave Management tables
+-- ----------
+create table if not exists public.leave_types (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete set null,
+  name text not null,
+  description text,
+  days_per_year numeric(5,1) not null default 0,
+  requires_approval boolean not null default true,
+  is_active boolean not null default true,
+  sort_order int not null default 0,
+  color text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+do $$ begin
+  alter table public.leave_types alter column tenant_id drop not null;
+exception
+  when others then null;
+end $$;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'leave_types_name_tenant_unique'
+  ) then
+    alter table public.leave_types add constraint leave_types_name_tenant_unique unique (tenant_id, name);
+  end if;
+end $$;
+
+create table if not exists public.leave_balances (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  leave_type_id uuid not null references public.leave_types(id) on delete cascade,
+  year int not null,
+  total_days numeric(5,1) not null default 0,
+  used_days numeric(5,1) not null default 0,
+  pending_days numeric(5,1) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint unique_leave_balance unique (tenant_id, user_id, leave_type_id, year)
+);
+
+create table if not exists public.leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  leave_type_id uuid not null references public.leave_types(id),
+  start_date date not null,
+  end_date date not null,
+  duration_days numeric(3,1) not null,
+  half_day boolean not null default false,
+  half_day_period text check (half_day_period in ('morning', 'afternoon')),
+  reason text,
+  status leave_status not null default 'pending',
+  approved_by uuid null references public.users(id) on delete set null,
+  approved_at timestamptz null,
+  rejection_reason text null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 -- ----------
@@ -1183,7 +1263,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments','shifts','user_shift_assignments','attendance_records','candidates','interviews','roles','role_permissions']
+  FOREACH t IN ARRAY ARRAY['tenants','users','user_tenant_roles','tenant_invites','time_entries','departments','user_departments','shifts','user_shift_assignments','attendance_records','leave_types','leave_balances','leave_requests','candidates','interviews','roles','role_permissions']
   LOOP
     EXECUTE format('drop trigger if exists trg_%I_updated_at on public.%I', t, t);
     EXECUTE format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.touch_updated_at()', t, t);
@@ -1286,7 +1366,8 @@ insert into public.modules (key, label) values
   ('rbac', 'Roles & Permissions'),
   ('shift', 'Shift Management'),
   ('attendance', 'Attendance'),
-  ('recruitment', 'Recruitment')
+  ('recruitment', 'Recruitment'),
+  ('leave', 'Leave Management')
 on conflict (key)
 do update set label = excluded.label;
 
@@ -1660,6 +1741,93 @@ with check (public.has_tenant_role(tenant_id, array['owner','admin']));
 drop policy if exists attendance_records_delete_admin on public.attendance_records;
 create policy attendance_records_delete_admin on public.attendance_records
 for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Leave Types RLS
+-- ----------
+alter table public.leave_types enable row level security;
+
+drop policy if exists leave_types_select_member on public.leave_types;
+create policy leave_types_select_member on public.leave_types
+for select using (
+  tenant_id is null
+  or public.is_tenant_member(tenant_id)
+);
+
+drop policy if exists leave_types_manage_admin on public.leave_types;
+create policy leave_types_manage_admin on public.leave_types
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists leave_types_update_admin on public.leave_types;
+create policy leave_types_update_admin on public.leave_types
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists leave_types_delete_admin on public.leave_types;
+create policy leave_types_delete_admin on public.leave_types
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Leave Balances RLS
+-- ----------
+alter table public.leave_balances enable row level security;
+
+drop policy if exists leave_balances_select_own_or_admin on public.leave_balances;
+create policy leave_balances_select_own_or_admin on public.leave_balances
+for select using (
+  public.is_tenant_member(tenant_id)
+  and (
+    user_id = public.current_app_user_id()
+    or public.has_tenant_role(tenant_id, array['owner','admin'])
+  )
+);
+
+drop policy if exists leave_balances_upsert_admin on public.leave_balances;
+create policy leave_balances_upsert_admin on public.leave_balances
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists leave_balances_update_admin on public.leave_balances;
+create policy leave_balances_update_admin on public.leave_balances
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+-- ----------
+-- Leave Requests RLS
+-- ----------
+alter table public.leave_requests enable row level security;
+
+drop policy if exists leave_requests_select_own_or_admin on public.leave_requests;
+create policy leave_requests_select_own_or_admin on public.leave_requests
+for select using (
+  public.is_tenant_member(tenant_id)
+  and (
+    user_id = public.current_app_user_id()
+    or public.has_tenant_role(tenant_id, array['owner','admin'])
+  )
+);
+
+drop policy if exists leave_requests_insert_self on public.leave_requests;
+create policy leave_requests_insert_self on public.leave_requests
+for insert with check (
+  public.is_tenant_member(tenant_id)
+  and user_id = public.current_app_user_id()
+);
+
+drop policy if exists leave_requests_cancel_self on public.leave_requests;
+create policy leave_requests_cancel_self on public.leave_requests
+for update using (
+  public.is_tenant_member(tenant_id)
+  and user_id = public.current_app_user_id()
+);
+
+drop policy if exists leave_requests_approve_by_permission on public.leave_requests;
+create policy leave_requests_approve_by_permission on public.leave_requests
+for update using (public.has_module_permission(tenant_id, 'leave', 'edit'))
+with check (public.has_module_permission(tenant_id, 'leave', 'edit'));
+
+drop policy if exists leave_requests_delete_by_permission on public.leave_requests;
+create policy leave_requests_delete_by_permission on public.leave_requests
+for delete using (public.has_module_permission(tenant_id, 'leave', 'delete'));
 
 -- ----------
 -- Candidates RLS
@@ -2524,3 +2692,19 @@ create index if not exists idx_document_templates_type on public.document_templa
 create index if not exists idx_generated_documents_tenant on public.generated_documents(tenant_id);
 create index if not exists idx_generated_documents_employee on public.generated_documents(employee_id);
 create index if not exists idx_generated_documents_type on public.generated_documents(document_type_id);
+-- Seed global leave types
+insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, sort_order, color) values
+  (null, 'Annual Leave', 'Paid time off for vacation or personal time', 20, true, true, 1, '#7c3aed'),
+  (null, 'Sick Leave', 'Time off for medical reasons', 12, true, true, 2, '#ef4444'),
+  (null, 'Personal Leave', 'Time off for personal or family matters', 5, true, true, 3, '#f59e0b'),
+  (null, 'Casual Leave', 'Short notice time off for emergencies', 6, true, true, 4, '#22c55e'),
+  (null, 'Maternity Leave', 'Leave for childbirth and childcare', 90, true, true, 5, '#ec4899'),
+  (null, 'Paternity Leave', 'Leave for new fathers', 10, true, true, 6, '#3b82f6')
+on conflict (tenant_id, name) do nothing;
+
+create index if not exists idx_leave_types_tenant on public.leave_types(tenant_id);
+create index if not exists idx_leave_balances_tenant_user on public.leave_balances(tenant_id, user_id, year);
+create index if not exists idx_leave_balances_lookup on public.leave_balances(tenant_id, user_id, leave_type_id, year);
+create index if not exists idx_leave_requests_tenant_user on public.leave_requests(tenant_id, user_id);
+create index if not exists idx_leave_requests_tenant_status on public.leave_requests(tenant_id, status);
+create index if not exists idx_leave_requests_dates on public.leave_requests(start_date, end_date);

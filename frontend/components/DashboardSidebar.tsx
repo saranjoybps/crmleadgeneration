@@ -19,6 +19,7 @@ import {
   Fingerprint,
   UserPlus,
   FileText,
+  CalendarCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -49,6 +50,7 @@ const MAIN_LINKS = [
   { href: "/dashboard/shifts", moduleKey: "shift", label: "Shifts", icon: Clock, roles: ["owner", "admin", "member"] },
   { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
   { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
+  { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
   { href: "/dashboard/documents", moduleKey: "documents", label: "Documents", icon: FileText, roles: ["owner", "admin", "member", "client"] },
   { href: "/dashboard/users", moduleKey: "users", label: "Users", icon: Users, roles: ["owner", "admin"] },
   { href: "/dashboard/settings", moduleKey: "settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },

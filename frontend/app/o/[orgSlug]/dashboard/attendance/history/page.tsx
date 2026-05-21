@@ -62,6 +62,32 @@ async function deleteRecord(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Record deleted.")}`);
 }
 
+async function editRecord(formData: FormData) {
+  "use server";
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const recordId = String(formData.get("record_id") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/attendance/history`;
+
+  const body: Record<string, unknown> = {};
+  const checkIn = formData.get("check_in_time");
+  if (checkIn) body.check_in_time = checkIn;
+  const checkOut = formData.get("check_out_time");
+  if (checkOut) body.check_out_time = checkOut;
+  const status = formData.get("status");
+  if (status) body.status = status;
+  const correctionReason = formData.get("correction_reason");
+  if (correctionReason) body.correction_reason = correctionReason;
+
+  const { error } = await apiRequest(`/api/v1/attendance/records/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    orgSlug,
+    body,
+  });
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("Record updated.")}`);
+}
+
 export default async function HistoryPage({ params, searchParams }: HistoryPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
@@ -255,6 +281,67 @@ export default async function HistoryPage({ params, searchParams }: HistoryPageP
           <p className="text-sm text-muted text-center py-6">No records found for the selected filters.</p>
         )}
       </Card>
+
+      {selectedRecord && query.modal === "edit" && (
+        <Modal isOpen={true} closeHref={`/o/${orgSlug}/dashboard/attendance/history`} title="Edit Attendance Record" size="md">
+          <form action={editRecord} className="space-y-5 p-1">
+            <input type="hidden" name="organization_slug" value={orgSlug} />
+            <input type="hidden" name="record_id" value={selectedRecord.id} />
+            <p className="text-xs text-muted mb-2">
+              Editing record for <strong>{new Date(selectedRecord.date + "T00:00:00").toLocaleDateString()}</strong>
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-muted mb-1.5 block">Check In</label>
+                <input
+                  type="datetime-local"
+                  name="check_in_time"
+                  defaultValue={selectedRecord.check_in_time?.replace("Z", "") || ""}
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-muted mb-1.5 block">Check Out</label>
+                <input
+                  type="datetime-local"
+                  name="check_out_time"
+                  defaultValue={selectedRecord.check_out_time?.replace("Z", "") || ""}
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-muted mb-1.5 block">Status</label>
+              <select
+                name="status"
+                defaultValue={selectedRecord.status}
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm focus:ring-2 focus:ring-violet-500"
+              >
+                <option value="present">Present</option>
+                <option value="late">Late</option>
+                <option value="half_day">Half Day</option>
+                <option value="absent">Absent</option>
+                <option value="overtime">Overtime</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-muted mb-1.5 block">Correction Reason</label>
+              <textarea
+                name="correction_reason"
+                rows={2}
+                className="h-20 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:ring-2 focus:ring-violet-500 resize-none"
+                placeholder="Reason for correction..."
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" size="lg" className="flex-1">Save Changes</Button>
+              <Link href={`/o/${orgSlug}/dashboard/attendance/history`}>
+                <Button variant="outline" size="lg" className="border-none text-muted">Cancel</Button>
+              </Link>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {selectedRecord && query.modal === "delete" && (
         <Modal isOpen={true} closeHref={`/o/${orgSlug}/dashboard/attendance/history`} title="Delete Record" size="sm">

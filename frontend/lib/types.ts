@@ -274,6 +274,64 @@ export type DocumentTemplate = {
   document_type?: Partial<DocumentType>;
 };
 
+export type LeaveStatus = "pending" | "approved" | "rejected" | "cancelled";
+
+export type LeaveType = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: string | null;
+  days_per_year: number;
+  requires_approval: boolean;
+  is_active: boolean;
+  sort_order: number;
+  color: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LeaveBalance = {
+  leave_type_id: string;
+  leave_type: Partial<LeaveType>;
+  year: number;
+  total_days: number;
+  used_days: number;
+  pending_days: number;
+  available_days: number;
+};
+
+export type LeaveRequest = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  leave_type_id: string;
+  start_date: string;
+  end_date: string;
+  duration_days: number;
+  half_day: boolean;
+  half_day_period: "morning" | "afternoon" | null;
+  reason: string | null;
+  status: LeaveStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  leave_type?: Partial<LeaveType>;
+  user?: Partial<User>;
+};
+
+export type AllLeaveBalances = {
+  year: number;
+  leave_types: LeaveType[];
+  members: Array<{
+    user_id: string;
+    email: string;
+    full_name: string;
+    balances: LeaveBalance[];
+  }>;
+};
+
 export type GeneratedDocument = {
   id: string;
   tenant_id: string;
