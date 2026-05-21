@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
+import { LifeBuoy, Bell } from "lucide-react";
+
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { PermissionsProvider } from "@/lib/permissions";
@@ -88,7 +90,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                     aria-label="Help"
                     title="Help"
                   >
-                    ?
+                    <LifeBuoy className="h-5 w-5" />
                   </button>
                   <button
                     type="button"
@@ -96,7 +98,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                     aria-label="Notifications"
                     title="Notifications"
                   >
-                    !
+                    <Bell className="h-5 w-5" />
                   </button>
                   <ProfileMenu
                     email={user.email ?? "unknown@joycrm.app"}

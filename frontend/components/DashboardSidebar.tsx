@@ -38,22 +38,60 @@ type DashboardSidebarProps = {
   allowedModuleKeys?: Set<string>;
 };
 
-const MAIN_LINKS = [
-  { href: "/dashboard", moduleKey: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/projects", moduleKey: "projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/roadmap", moduleKey: "roadmap", label: "Roadmap", icon: Map, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/calendar", moduleKey: "calendar", label: "Calendar", icon: Calendar, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tickets", moduleKey: "tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/tasks", moduleKey: "tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/todos", moduleKey: "todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/vault", moduleKey: "vault", label: "Vault", icon: LockKeyhole, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/shifts", moduleKey: "shift", label: "Shifts", icon: Clock, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
-  { href: "/dashboard/documents", moduleKey: "documents", label: "Documents", icon: FileText, roles: ["owner", "admin", "member", "client"] },
-  { href: "/dashboard/users", moduleKey: "users", label: "Users", icon: Users, roles: ["owner", "admin"] },
-  { href: "/dashboard/settings", moduleKey: "settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
+type SidebarLink = {
+  href: string;
+  moduleKey: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles: readonly string[];
+};
+
+const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = [
+  {
+    key: "overview",
+    label: "Overview",
+    links: [
+      { href: "/dashboard", moduleKey: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
+    ],
+  },
+  {
+    key: "management",
+    label: "Management",
+    links: [
+      { href: "/dashboard/projects", moduleKey: "projects", label: "Projects", icon: Briefcase, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/roadmap", moduleKey: "roadmap", label: "Roadmap", icon: Map, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/calendar", moduleKey: "calendar", label: "Calendar", icon: Calendar, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/tickets", moduleKey: "tickets", label: "Tickets", icon: Ticket, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/tasks", moduleKey: "tasks", label: "Tasks", icon: CheckSquare, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/todos", moduleKey: "todos", label: "Todos", icon: ListChecks, roles: ["owner", "admin", "member"] },
+    ],
+  },
+  {
+    key: "hr",
+    label: "HR",
+    links: [
+      { href: "/dashboard/shifts", moduleKey: "shift", label: "Shifts", icon: Clock, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
+    ],
+  },
+  {
+    key: "tools",
+    label: "Tools",
+    links: [
+      { href: "/dashboard/vault", moduleKey: "vault", label: "Vault", icon: LockKeyhole, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/documents", moduleKey: "documents", label: "Documents", icon: FileText, roles: ["owner", "admin", "member", "client"] },
+    ],
+  },
+  {
+    key: "administration",
+    label: "Administration",
+    links: [
+      { href: "/dashboard/users", moduleKey: "users", label: "Users", icon: Users, roles: ["owner", "admin"] },
+      { href: "/dashboard/settings", moduleKey: "settings", label: "Settings", icon: Settings, roles: ["owner", "admin", "member", "client"] },
+    ],
+  },
 ] as const;
 
 function isLinkActive(pathname: string, href: string) {
@@ -64,12 +102,18 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const hasDynamicPermissions = allowedModuleKeys !== undefined;
-  const links = MAIN_LINKS.filter((item) => {
+
+  function isLinkVisible(link: SidebarLink): boolean {
     if (hasDynamicPermissions) {
-      return item.moduleKey ? allowedModuleKeys.has(item.moduleKey) : true;
+      return link.moduleKey ? allowedModuleKeys.has(link.moduleKey) : true;
     }
-    return (item.roles as readonly string[]).includes(role);
-  });
+    return (link.roles as readonly string[]).includes(role);
+  }
+
+  const visibleCategories = CATEGORIES.map((cat) => ({
+    ...cat,
+    links: cat.links.filter(isLinkVisible),
+  })).filter((cat) => cat.links.length > 0);
 
   useEffect(() => {
     setIsOpen(false);
@@ -112,27 +156,36 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <nav className="space-y-1.5">
-            {links.map((link) => {
-              const href = `${basePath}${link.href}`;
-              const active = isLinkActive(pathname, href);
-              const Icon = link.icon;
-              return (
-                <Link
-                  key={link.href}
-                  href={href}
-                  className={cn(
-                    "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all",
-                    active 
-                      ? "bg-violet-600 text-white shadow-lg shadow-violet-900/20" 
-                      : "text-indigo-200/80 hover:bg-indigo-800 hover:text-white"
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5 transition-colors", active ? "text-white" : "text-indigo-400")} />
-                  {link.label}
-                </Link>
-              );
-            })}
+          <nav className="space-y-6">
+            {visibleCategories.map((category) => (
+              <div key={category.key}>
+                <p className="mb-2 px-4 text-[10px] font-bold uppercase tracking-[0.15em] text-indigo-400">
+                  {category.label}
+                </p>
+                <div className="space-y-1">
+                  {category.links.map((link) => {
+                    const href = `${basePath}${link.href}`;
+                    const active = isLinkActive(pathname, href);
+                    const Icon = link.icon;
+                    return (
+                      <Link
+                        key={link.href}
+                        href={href}
+                        className={cn(
+                          "flex items-center gap-3.5 rounded-xl px-4 py-3 text-sm font-semibold transition-all",
+                          active 
+                            ? "bg-violet-600 text-white shadow-lg shadow-violet-900/20" 
+                            : "text-indigo-200/80 hover:bg-indigo-800 hover:text-white"
+                        )}
+                      >
+                        <Icon className={cn("h-5 w-5 transition-colors", active ? "text-white" : "text-indigo-400")} />
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </div>
 
