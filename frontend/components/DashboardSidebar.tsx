@@ -21,6 +21,8 @@ import {
   FileText,
   CalendarCheck,
   Megaphone,
+  BarChart3,
+  FileSpreadsheet,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -76,6 +78,14 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
       { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
+    ],
+  },
+  {
+    key: "insights",
+    label: "Insights",
+    links: [
+      { href: "/dashboard/analytics", moduleKey: "analytics", label: "Analytics", icon: BarChart3, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/reports", moduleKey: "reports", label: "Reports", icon: FileSpreadsheet, roles: ["owner", "admin", "member"] },
     ],
   },
   {

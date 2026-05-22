@@ -253,6 +253,50 @@ export type Announcement = {
   is_read?: boolean;
 };
 
+export type DashboardSummary = {
+  active_projects: number;
+  open_tickets: number;
+  pending_tasks: number;
+  team_members: number;
+  pending_todos: number;
+  attendance_today: { present: number; absent: number; late: number; on_leave: number; total: number };
+  unread_announcements: number;
+  pending_leave_requests: number;
+  new_candidates_this_month: number;
+  overdue_tasks: number;
+  total_logged_hours: number;
+  upcoming_deadlines: Array<{ id: string; title: string; type: string; due_date: string; project_name: string }>;
+  recent_activity: Array<{ module: string; title: string; action: string; timestamp: string; user_name: string }>;
+  ticket_breakdown: Array<{ name: string; value: number }>;
+  task_breakdown: Array<{ name: string; value: number }>;
+  project_status_breakdown: Array<{ name: string; value: number }>;
+  monthly_trends: {
+    months: string[];
+    tickets_created: number[];
+    tickets_closed: number[];
+    tasks_completed: number[];
+  };
+};
+
+export type ReportDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
+  filters?: Array<{ key: string; label: string; type: "date" | "select" | "text" }>;
+};
+
+export type AnalyticsOverview = {
+  ticket_trends: { months: string[]; created: number[]; closed: number[] };
+  project_status: Array<{ name: string; value: number }>;
+  task_completion: Array<{ name: string; open: number; in_progress: number; closed: number }>;
+  attendance_trends: { months: string[]; rate: number[] };
+  leave_distribution: Array<{ name: string; value: number }>;
+  time_by_project: Array<{ name: string; hours: number }>;
+  recruitment_funnel: Array<{ name: string; value: number }>;
+  tasks_vs_tickets: Array<{ project: string; tasks: number; tickets: number }>;
+};
+
 export type Todo = {
   id: string;
   tenant_id: string;

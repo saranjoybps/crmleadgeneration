@@ -2652,6 +2652,12 @@ for each row execute function public.touch_updated_at();
 insert into public.modules (key, label) values ('announcement', 'Announcements')
 on conflict (key) do update set label = excluded.label;
 
+insert into public.modules (key, label) values ('reports', 'Reports')
+on conflict (key) do update set label = excluded.label;
+
+insert into public.modules (key, label) values ('analytics', 'Analytics')
+on conflict (key) do update set label = excluded.label;
+
 create table if not exists public.announcements (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
