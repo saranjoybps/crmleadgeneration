@@ -2646,6 +2646,108 @@ drop trigger if exists trg_generated_documents_updated_at on public.generated_do
 create trigger trg_generated_documents_updated_at before update on public.generated_documents
 for each row execute function public.touch_updated_at();
 
+-- ----------
+-- Announcements Module
+-- ----------
+insert into public.modules (key, label) values ('announcement', 'Announcements')
+on conflict (key) do update set label = excluded.label;
+
+create table if not exists public.announcements (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  title text not null,
+  content text not null,
+  priority priority_level not null default 'medium',
+  target_type text not null default 'all'
+    constraint announcements_target_type_check
+    check (target_type in ('all', 'department', 'user')),
+  created_by uuid not null references public.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.announcement_targets (
+  id uuid primary key default gen_random_uuid(),
+  announcement_id uuid not null references public.announcements(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  target_type text not null
+    constraint announcement_targets_type_check
+    check (target_type in ('department', 'user')),
+  target_id uuid not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.announcement_reads (
+  id uuid primary key default gen_random_uuid(),
+  announcement_id uuid not null references public.announcements(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  read_at timestamptz not null default now(),
+  unique (announcement_id, user_id)
+);
+
+-- Announcement triggers
+drop trigger if exists trg_announcements_updated_at on public.announcements;
+create trigger trg_announcements_updated_at
+  before update on public.announcements
+  for each row execute function public.touch_updated_at();
+
+-- Enable RLS
+alter table public.announcements enable row level security;
+alter table public.announcement_targets enable row level security;
+alter table public.announcement_reads enable row level security;
+
+-- Announcements RLS
+drop policy if exists announcements_select_scoped on public.announcements;
+create policy announcements_select_scoped on public.announcements
+  for select using (
+    public.has_module_permission(tenant_id, 'announcement', 'view')
+  );
+
+drop policy if exists announcements_insert_scoped on public.announcements;
+create policy announcements_insert_scoped on public.announcements
+  for insert with check (
+    public.has_module_permission(tenant_id, 'announcement', 'create')
+  );
+
+drop policy if exists announcements_update_scoped on public.announcements;
+create policy announcements_update_scoped on public.announcements
+  for update using (public.has_module_permission(tenant_id, 'announcement', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'announcement', 'edit'));
+
+drop policy if exists announcements_delete_scoped on public.announcements;
+create policy announcements_delete_scoped on public.announcements
+  for delete using (public.has_module_permission(tenant_id, 'announcement', 'delete'));
+
+-- Announcement Targets RLS
+drop policy if exists announcement_targets_select_scoped on public.announcement_targets;
+create policy announcement_targets_select_scoped on public.announcement_targets
+  for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists announcement_targets_insert_scoped on public.announcement_targets;
+create policy announcement_targets_insert_scoped on public.announcement_targets
+  for insert with check (public.has_module_permission(tenant_id, 'announcement', 'create'));
+
+drop policy if exists announcement_targets_delete_scoped on public.announcement_targets;
+create policy announcement_targets_delete_scoped on public.announcement_targets
+  for delete using (public.has_module_permission(tenant_id, 'announcement', 'delete'));
+
+-- Announcement Reads RLS
+drop policy if exists announcement_reads_select_scoped on public.announcement_reads;
+create policy announcement_reads_select_scoped on public.announcement_reads
+  for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists announcement_reads_insert_scoped on public.announcement_reads;
+create policy announcement_reads_insert_scoped on public.announcement_reads
+  for insert with check (user_id = public.current_app_user_id());
+
+-- Announcement indexes
+create index if not exists idx_announcements_tenant_created on public.announcements(tenant_id, created_at desc);
+create index if not exists idx_announcements_target_type on public.announcements(tenant_id, target_type);
+create index if not exists idx_announcement_targets_announcement on public.announcement_targets(announcement_id);
+create index if not exists idx_announcement_targets_target on public.announcement_targets(tenant_id, target_type, target_id);
+create index if not exists idx_announcement_reads_lookup on public.announcement_reads(announcement_id, user_id);
+
 -- Performance indexes for frequently queried foreign keys
 create index if not exists idx_role_permissions_tenant on public.role_permissions(tenant_id);
 create index if not exists idx_role_permissions_role on public.role_permissions(role_id);

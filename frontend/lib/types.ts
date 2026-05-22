@@ -238,6 +238,21 @@ export type StatusLogEntry = {
   changed_by_user?: Partial<User>;
 };
 
+export type Announcement = {
+  id: string;
+  tenant_id: string;
+  title: string;
+  content: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  target_type: "all" | "department" | "user";
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  targets?: Array<{ id: string; target_type: string; target_id: string }>;
+  read_count?: number;
+  is_read?: boolean;
+};
+
 export type Todo = {
   id: string;
   tenant_id: string;

@@ -20,6 +20,7 @@ import {
   UserPlus,
   FileText,
   CalendarCheck,
+  Megaphone,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -52,6 +53,7 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
     label: "Overview",
     links: [
       { href: "/dashboard", moduleKey: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/announcements", moduleKey: "announcement", label: "Announcements", icon: Megaphone, roles: ["owner", "admin", "member", "client"] },
     ],
   },
   {
