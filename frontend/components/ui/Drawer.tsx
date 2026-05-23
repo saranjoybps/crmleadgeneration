@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { X } from "lucide-react";
@@ -15,7 +15,42 @@ interface DrawerProps {
   size?: "sm" | "md" | "lg" | "xl";
 }
 
-export function Drawer({ isOpen, onClose, closeHref, title, children, size = "md" }: DrawerProps) {
+const sizes = {
+  sm: "max-w-md",
+  md: "max-w-xl",
+  lg: "max-w-3xl",
+  xl: "max-w-5xl",
+};
+
+function DrawerCloseButton({ closeHref, onClose }: { closeHref?: string; onClose?: () => void }) {
+  if (closeHref) {
+    return (
+      <Link
+        href={closeHref}
+        className="rounded-xl p-2 text-muted hover:bg-slate-100 transition-all hover:scale-110"
+      >
+        <X className="h-5 w-5" strokeWidth={2.5} />
+      </Link>
+    );
+  }
+  return (
+    <button
+      onClick={onClose}
+      className="rounded-xl p-2 text-muted hover:bg-slate-100 transition-all hover:scale-110"
+    >
+      <X className="h-5 w-5" strokeWidth={2.5} />
+    </button>
+  );
+}
+
+function DrawerOverlay({ closeHref, onClose }: { closeHref?: string; onClose?: () => void }) {
+  if (closeHref) {
+    return <Link href={closeHref} className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" />;
+  }
+  return <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} />;
+}
+
+export const Drawer = memo(function Drawer({ isOpen, onClose, closeHref, title, children, size = "md" }: DrawerProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -30,45 +65,10 @@ export function Drawer({ isOpen, onClose, closeHref, title, children, size = "md
 
   if (!mounted || !isOpen) return null;
 
-  const sizes = {
-    sm: "max-w-md",
-    md: "max-w-xl",
-    lg: "max-w-3xl",
-    xl: "max-w-5xl",
-  };
-
-  const CloseElement = () => {
-    if (closeHref) {
-      return (
-        <Link 
-          href={closeHref}
-          className="rounded-xl p-2 text-muted hover:bg-slate-100 transition-all hover:scale-110"
-        >
-          <X className="h-5 w-5" strokeWidth={2.5} />
-        </Link>
-      );
-    }
-    return (
-      <button 
-        onClick={onClose}
-        className="rounded-xl p-2 text-muted hover:bg-slate-100 transition-all hover:scale-110"
-      >
-        <X className="h-5 w-5" strokeWidth={2.5} />
-      </button>
-    );
-  };
-
-  const Overlay = () => {
-    if (closeHref) {
-      return <Link href={closeHref} className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" />;
-    }
-    return <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} />;
-  };
-
   return createPortal(
     <div className="fixed inset-0 z-[100] flex justify-end">
-      <Overlay />
-      <div 
+      <DrawerOverlay closeHref={closeHref} onClose={onClose} />
+      <div
         className={cn(
           "relative flex h-full w-full flex-col bg-white shadow-2xl transition-transform animate-in slide-in-from-right duration-300 ease-out",
           sizes[size]
@@ -78,7 +78,7 @@ export function Drawer({ isOpen, onClose, closeHref, title, children, size = "md
           {title ? (
             <h3 className="text-xl font-bold text-main tracking-tight">{title}</h3>
           ) : <div />}
-          <CloseElement />
+          <DrawerCloseButton closeHref={closeHref} onClose={onClose} />
         </div>
         <div className="flex-1 overflow-y-auto p-8">
           {children}
@@ -87,4 +87,4 @@ export function Drawer({ isOpen, onClose, closeHref, title, children, size = "md
     </div>,
     document.body
   );
-}
+});

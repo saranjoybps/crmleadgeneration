@@ -1,8 +1,9 @@
+import { memo } from "react";
 import { cn } from "@/lib/utils";
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-export function Card({ className, ...props }: CardProps) {
+export const Card = memo(function Card({ className, ...props }: CardProps) {
   return (
     <div
       className={cn(
@@ -12,4 +13,4 @@ export function Card({ className, ...props }: CardProps) {
       {...props}
     />
   );
-}
+});

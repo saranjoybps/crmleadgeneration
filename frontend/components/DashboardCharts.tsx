@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -13,7 +14,7 @@ type Props = {
 
 const PIE_COLORS = ["#7c3aed", "#f59e0b", "#10b981", "#ef4444", "#6366f1", "#ec4899"];
 
-export function DashboardCharts({ summary }: Props) {
+export const DashboardCharts = memo(function DashboardCharts({ summary }: Props) {
   const { monthly_trends, project_status_breakdown, ticket_breakdown, task_breakdown } = summary;
 
   const hasTrends = monthly_trends?.months?.length > 0;
@@ -126,4 +127,4 @@ export function DashboardCharts({ summary }: Props) {
       )}
     </div>
   );
-}
+});

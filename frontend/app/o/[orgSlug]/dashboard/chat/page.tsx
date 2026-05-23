@@ -1,9 +1,17 @@
+import { Suspense } from "react";
 import { MessageSquare } from "lucide-react";
+import dynamic from "next/dynamic";
 
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
-import { ChatPageClient } from "@/components/chat/ChatPageClient";
-import { Card } from "@/components/ui/Card";
+
+const ChatPageClient = dynamic(() => import("@/components/chat/ChatPageClient").then((m) => m.ChatPageClient), {
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
+    </div>
+  ),
+});
 
 type PageProps = {
   params: Promise<{ orgSlug: string }>;

@@ -12,7 +12,6 @@ async function resolveTenantSlug(supabase: any) {
   if (error || !Array.isArray(data) || data.length === 0) {
     return null;
   }
-
   return String(data[0].tenant_slug ?? "").trim() || null;
 }
 
@@ -41,9 +40,11 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // Use getSession() instead of getUser() — reads from cookie, avoids 100-200ms API call
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
 
   const pathname = request.nextUrl.pathname;
   const requiresAuth = pathname.startsWith("/o/") || pathname === "/dashboard" || pathname.startsWith("/dashboard/");
@@ -56,7 +57,20 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && (isAuthPath || pathname === "/dashboard" || pathname.startsWith("/dashboard/"))) {
-    const slug = await resolveTenantSlug(supabase);
+    // Check for cached tenant slug in cookie to avoid RPC call
+    let slug: string | undefined | null = request.cookies.get("tenant_slug")?.value;
+    if (!slug) {
+      slug = await resolveTenantSlug(supabase);
+      if (slug) {
+        // Cache tenant slug in cookie for 1 hour
+        response.cookies.set("tenant_slug", slug, {
+          maxAge: 3600,
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+        });
+      }
+    }
     if (slug) {
       const redirectUrl = request.nextUrl.clone();
       if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {

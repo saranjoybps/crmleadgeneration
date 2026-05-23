@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, useMemo, ReactNode } from "react";
 
 type ModulePermissions = {
   can_view: boolean;
@@ -26,8 +26,10 @@ type PermissionsProviderProps = {
 };
 
 export function PermissionsProvider({ children, permissions }: PermissionsProviderProps) {
+  const value = useMemo(() => permissions, [JSON.stringify(permissions)]);
+
   return (
-    <PermissionsContext.Provider value={permissions}>
+    <PermissionsContext.Provider value={value}>
       {children}
     </PermissionsContext.Provider>
   );

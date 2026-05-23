@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, memo } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import "gantt-task-react/dist/index.css";
 
@@ -11,13 +11,12 @@ interface GanttChartProps {
   onTaskChange?: (task: Task) => void;
 }
 
-export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttChartProps) {
+export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttChartProps) {
   const ganttTasks: Task[] = useMemo(() => {
     const items: Task[] = [];
 
     if (milestones && milestones.length > 0) {
       milestones.forEach(m => {
-        // Add Milestone marker
         items.push({
           start: new Date(m.due_date),
           end: new Date(m.due_date),
@@ -35,7 +34,6 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
           project: m.project_id,
         });
 
-        // Add tickets linked to this milestone
         const linkedTickets = tickets?.filter(t => t.milestone_id === m.id) || [];
         linkedTickets.forEach(t => {
           items.push({
@@ -55,7 +53,6 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
             project: t.project_id,
           });
 
-          // Add tasks linked to this ticket
           const linkedTasks = tasks?.filter(tsk => tsk.ticket_id === t.id) || [];
           linkedTasks.forEach(tsk => {
              items.push({
@@ -79,7 +76,6 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
         });
       });
     } else {
-      // If no milestones, just show tasks
       if (tasks && tasks.length > 0) {
         tasks.forEach(t => {
           items.push({
@@ -127,4 +123,4 @@ export function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttCh
       />
     </div>
   );
-}
+});

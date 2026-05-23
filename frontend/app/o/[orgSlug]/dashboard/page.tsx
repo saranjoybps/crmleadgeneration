@@ -6,7 +6,11 @@ import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { DashboardCharts } from "@/components/DashboardCharts";
+import dynamic from "next/dynamic";
+
+const DashboardCharts = dynamic(() => import("@/components/DashboardCharts").then((m) => m.DashboardCharts), {
+  loading: () => <div className="h-64 rounded-2xl border border-soft bg-white p-6 animate-pulse" />,
+});
 import type { DashboardSummary } from "@/lib/types";
 
 type PageProps = {

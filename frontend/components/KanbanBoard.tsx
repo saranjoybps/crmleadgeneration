@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import Link from "next/link";
 import { 
   DndContext, 
@@ -54,7 +54,7 @@ interface KanbanBoardProps {
 
 const KANBAN_STATUSES = ["open", "in_progress", "review", "hold", "closed"] as const;
 
-export function KanbanBoard({ 
+export const KanbanBoard = memo(function KanbanBoard({ 
   initialTasks, 
   orgSlug, 
   canManage, 
@@ -64,9 +64,11 @@ export function KanbanBoard({
   const [tasks, setTasks] = useState(initialTasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const pendingStatusRef = useRef<Map<string, string>>(new Map());
+  const initialTasksRef = useRef(initialTasks);
 
-  // Sync internal state when initialTasks changes from server
+  // Only sync when initialTasks reference actually changes (not on every render)
   useEffect(() => {
+    initialTasksRef.current = initialTasks;
     setTasks(initialTasks);
   }, [initialTasks]);
 
@@ -89,13 +91,13 @@ export function KanbanBoard({
     return map;
   }, [tasks]);
 
-  const handleDragStart = (event: DragStartEvent) => {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     const task = tasks.find(t => t.id === active.id);
     if (task) setActiveTask(task);
-  };
+  }, [tasks]);
 
-  const handleDragOver = (event: DragOverEvent) => {
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
 
@@ -104,59 +106,53 @@ export function KanbanBoard({
 
     if (activeId === overId) return;
 
-    const isActiveATask = tasks.some(t => t.id === activeId);
-    const isOverATask = tasks.some(t => t.id === overId);
+    setTasks(prev => {
+      const isActiveATask = prev.some(t => t.id === activeId);
+      const isOverATask = prev.some(t => t.id === overId);
 
-    if (!isActiveATask) return;
+      if (!isActiveATask) return prev;
 
-    // Dropping a Task over another Task
-    if (isActiveATask && isOverATask) {
-      const activeTask = tasks.find(t => t.id === activeId)!;
-      const overTask = tasks.find(t => t.id === overId)!;
+      if (isActiveATask && isOverATask) {
+        const activeTask = prev.find(t => t.id === activeId)!;
+        const overTask = prev.find(t => t.id === overId)!;
 
-      if (activeTask.status !== overTask.status) {
-        pendingStatusRef.current.set(activeId as string, overTask.status);
-        setTasks(prev => {
+        if (activeTask.status !== overTask.status) {
+          pendingStatusRef.current.set(activeId as string, overTask.status);
           const activeIndex = prev.findIndex(t => t.id === activeId);
           const overIndex = prev.findIndex(t => t.id === overId);
-          
           const updatedTasks = [...prev];
           updatedTasks[activeIndex] = { ...activeTask, status: overTask.status };
           return arrayMove(updatedTasks, activeIndex, overIndex);
-        });
+        }
+        return prev;
       }
-    }
 
-    // Dropping a Task over a Column
-    const isOverAColumn = KANBAN_STATUSES.includes(overId as any);
-    if (isActiveATask && isOverAColumn) {
-      const activeTask = tasks.find(t => t.id === activeId)!;
-      if (activeTask.status !== overId) {
-        pendingStatusRef.current.set(activeId as string, overId as string);
-        setTasks(prev => {
+      const isOverAColumn = KANBAN_STATUSES.includes(overId as any);
+      if (isActiveATask && isOverAColumn) {
+        const activeTask = prev.find(t => t.id === activeId)!;
+        if (activeTask.status !== overId) {
+          pendingStatusRef.current.set(activeId as string, overId as string);
           const activeIndex = prev.findIndex(t => t.id === activeId);
           const updatedTasks = [...prev];
           updatedTasks[activeIndex] = { ...activeTask, status: overId as string };
           return arrayMove(updatedTasks, activeIndex, activeIndex);
-        });
+        }
       }
-    }
-  };
+      return prev;
+    });
+  }, []);
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTask(null);
 
     if (!over) return;
 
     const activeId = active.id;
-
-    // Use initialTasks to find the original state of the task
-    const originalTask = initialTasks.find(t => t.id === activeId);
+    const initialTasksCurrent = initialTasksRef.current;
+    const originalTask = initialTasksCurrent.find(t => t.id === activeId);
     if (!originalTask) return;
 
-    // Use pendingStatusRef (set synchronously during handleDragOver) instead of
-    // the tasks state, which may not have committed the dragOver updates yet.
     const pendingStatus = pendingStatusRef.current.get(activeId as string);
     pendingStatusRef.current.clear();
 
@@ -166,11 +162,10 @@ export function KanbanBoard({
       try {
         await onStatusChange(activeId as string, newStatus);
       } catch {
-        // Revert on failure
-        setTasks(initialTasks);
+        setTasks(initialTasksCurrent);
       }
     }
-  };
+  }, [onStatusChange]);
 
   const dropAnimation: DropAnimation = {
     sideEffects: defaultDropAnimationSideEffects({
@@ -218,9 +213,9 @@ export function KanbanBoard({
       </DragOverlay>
     </DndContext>
   );
-}
+});
 
-function Column({ status, tasks, orgSlug, canManage, ticketTitleById }: { 
+const Column = memo(function Column({ status, tasks, orgSlug, canManage, ticketTitleById }: { 
   status: string; 
   tasks: Task[]; 
   orgSlug: string; 
@@ -274,9 +269,9 @@ function Column({ status, tasks, orgSlug, canManage, ticketTitleById }: {
       </div>
     </div>
   );
-}
+});
 
-function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: { 
+const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: { 
   task: Task; 
   orgSlug: string; 
   canManage: boolean; 
@@ -327,17 +322,17 @@ function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: {
     >
       <div className="mb-2 flex items-center justify-between">
          <div className={cn("flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", 
-           task.priority === 'urgent' ? "bg-red-100 text-red-700" :
-           task.priority === 'high' ? "bg-amber-100 text-amber-700" :
-           task.priority === 'medium' ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
-         )}>
+          task.priority === 'urgent' ? "bg-red-100 text-red-700" :
+          task.priority === 'high' ? "bg-amber-100 text-amber-700" :
+          task.priority === 'medium' ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+        )}>
            <AlertCircle className="h-2.5 w-2.5" />
            {task.priority}
          </div>
          {task.due_date && (
            <div className={cn("flex items-center gap-1 text-[10px] font-medium", 
-             new Date(task.due_date) < new Date() && task.status !== 'closed' ? "text-red-500" : "text-muted"
-           )}>
+            new Date(task.due_date) < new Date() && task.status !== 'closed' ? "text-red-500" : "text-muted"
+          )}>
              <Calendar className="h-3 w-3" />
              {new Date(task.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
            </div>
@@ -348,7 +343,7 @@ function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: {
         <Link 
           href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`} 
           className="text-sm font-bold text-main hover:text-violet-600 leading-tight pr-6"
-          onPointerDown={(e) => e.stopPropagation()} // Prevent drag start when clicking link
+          onPointerDown={(e) => e.stopPropagation()}
         >
           {task.title}
         </Link>
@@ -373,7 +368,6 @@ function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: {
           <span className="truncate max-w-[100px]">{ticketTitleById.get(task.ticket_id) || "General"}</span>
         </div>
         
-        {/* Assignees Avatars */}
         <div className="flex -space-x-1.5">
           {(task.task_assignees || []).slice(0, 3).map((a, i) => (
             <div 
@@ -402,4 +396,4 @@ function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: {
       </div>
     </div>
   );
-}
+});

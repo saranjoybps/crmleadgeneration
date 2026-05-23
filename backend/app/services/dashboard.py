@@ -151,6 +151,8 @@ class DashboardService:
         upcoming_deadlines = []
         week_from_now = (now + timedelta(days=7)).isoformat()
         try:
+            deadline_project_ids: set[str] = set()
+
             _, task_f = _apply_project_scope(additional_filters={
                 "gte": {"due_date": now.isoformat()},
                 "lte": {"due_date": week_from_now},
@@ -164,35 +166,36 @@ class DashboardService:
                     tasks_due = tasks_due.in_("project_id", project_id_list)
                 tasks_due = tasks_due.gte("due_date", now.isoformat()).lte("due_date", week_from_now).not_.eq("status", "closed").order("due_date").limit(5).execute()
                 for t in tasks_due.data or []:
-                    proj_name = ""
-                    try:
-                        p = supabase.table("projects").select("name").eq("id", t["project_id"]).single().execute()
-                        proj_name = p.data.get("name", "") if p.data else ""
-                    except APIError:
-                        pass
+                    deadline_project_ids.add(t["project_id"])
                     upcoming_deadlines.append({
                         "id": t["id"],
                         "title": t["title"],
                         "type": "task",
                         "due_date": t["due_date"],
-                        "project_name": proj_name,
+                        "project_id": t["project_id"],
                     })
 
             tickets_due = supabase.table("tickets").select("id, title, due_date, project_id").eq("tenant_id", ctx.tenant_id).eq("status", "open").gte("due_date", now.isoformat()).lte("due_date", week_from_now).order("due_date").limit(5).execute()
             for t in tickets_due.data or []:
-                proj_name = ""
-                try:
-                    p = supabase.table("projects").select("name").eq("id", t["project_id"]).single().execute()
-                    proj_name = p.data.get("name", "") if p.data else ""
-                except APIError:
-                    pass
+                deadline_project_ids.add(t["project_id"])
                 upcoming_deadlines.append({
                     "id": t["id"],
                     "title": t["title"],
                     "type": "ticket",
                     "due_date": t["due_date"],
-                    "project_name": proj_name,
+                    "project_id": t["project_id"],
                 })
+
+            # Batch-fetch project names (eliminates N+1)
+            project_name_map: dict[str, str] = {}
+            if deadline_project_ids:
+                project_ids_list = list(deadline_project_ids)
+                projects_res = supabase.table("projects").select("id, name").in_("id", project_ids_list).execute()
+                for p in (projects_res.data or []):
+                    project_name_map[p["id"]] = p.get("name", "")
+
+            for d in upcoming_deadlines:
+                d["project_name"] = project_name_map.get(d.pop("project_id", ""), "")
 
             upcoming_deadlines.sort(key=lambda x: x.get("due_date", ""))
             upcoming_deadlines = upcoming_deadlines[:5]

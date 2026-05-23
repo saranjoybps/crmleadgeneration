@@ -271,35 +271,20 @@ class RBACService:
                 ],
             }
 
-        # IMPORTANT: do not read role_permissions directly here for non-owner users.
-        # RLS on role_permissions allows direct select for owner/admin only, which makes
-        # non-admin users appear to have zero permissions even when configured.
-        # Use the has_module_permission RPC (same source of truth used by guards).
+        # Use batch RPC (single call) instead of 4n individual RPC calls.
+        permissions_result = supabase.rpc(
+            "get_all_module_permissions",
+            {"p_tenant_id": ctx.tenant_id},
+        ).execute()
         permissions_by_module_key: dict[str, dict] = {}
-        for module in modules:
-            module_key = module["key"]
-            can_view = bool(supabase.rpc(
-                "has_module_permission",
-                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "view"},
-            ).execute().data)
-            can_create = bool(supabase.rpc(
-                "has_module_permission",
-                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "create"},
-            ).execute().data)
-            can_edit = bool(supabase.rpc(
-                "has_module_permission",
-                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "edit"},
-            ).execute().data)
-            can_delete = bool(supabase.rpc(
-                "has_module_permission",
-                {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": "delete"},
-            ).execute().data)
-            permissions_by_module_key[module_key] = {
-                "can_view": can_view,
-                "can_create": can_create,
-                "can_edit": can_edit,
-                "can_delete": can_delete,
-            }
+        if permissions_result.data:
+            for row in permissions_result.data:
+                permissions_by_module_key[row["module_key"]] = {
+                    "can_view": bool(row["can_view"]),
+                    "can_create": bool(row["can_create"]),
+                    "can_edit": bool(row["can_edit"]),
+                    "can_delete": bool(row["can_delete"]),
+                }
 
         logger.info(
             "[RBAC][PERMS] tenant_id=%s role_id=%s role_key=%s modules=%s dashboard_permission=%s source=rpc",

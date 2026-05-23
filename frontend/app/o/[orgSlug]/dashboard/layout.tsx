@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { LifeBuoy, Bell, MessageSquare } from "lucide-react";
@@ -9,6 +10,7 @@ import { PermissionsProvider } from "@/lib/permissions";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 import { apiRequest } from "@/lib/api-server";
+import DashboardLoading from "./loading";
 
 type DashboardLayoutProps = {
   children: React.ReactNode;
@@ -119,7 +121,11 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                 </div>
               </div>
             </header>
-            <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              <Suspense fallback={<DashboardLoading />}>
+                {children}
+              </Suspense>
+            </div>
           </section>
         </div>
       </main>

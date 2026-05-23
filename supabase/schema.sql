@@ -867,6 +867,58 @@ begin
 end;
 $$;
 
+create or replace function public.get_all_module_permissions(
+  p_tenant_id uuid
+)
+returns table(
+  module_key text,
+  can_view boolean,
+  can_create boolean,
+  can_edit boolean,
+  can_delete boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_role_key text;
+  v_role_id uuid;
+begin
+  -- 1. Get user's role in this tenant
+  select r.key, r.id
+  into v_role_key, v_role_id
+  from public.user_tenant_roles utr
+  join public.roles r on r.id = utr.role_id
+  where utr.tenant_id = p_tenant_id
+    and utr.user_id = public.current_app_user_id()
+    and utr.is_active = true;
+
+  -- 2. Owner Bypass: Owners always have full access
+  if v_role_key = 'owner' then
+    return query
+      select m.key, true, true, true, true
+      from public.modules m
+      order by m.label;
+    return;
+  end if;
+
+  -- 3. Batch return all module permissions in one query
+  return query
+    select m.key,
+      coalesce(rp.can_view, false),
+      coalesce(rp.can_create, false),
+      coalesce(rp.can_edit, false),
+      coalesce(rp.can_delete, false)
+    from public.modules m
+    left join public.role_permissions rp on rp.module_id = m.id
+      and rp.tenant_id = p_tenant_id
+      and rp.role_id = v_role_id
+    order by m.label;
+end;
+$$;
+
 create or replace function public.is_admin_or_owner_anywhere()
 returns boolean
 language sql

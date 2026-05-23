@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { GanttChart } from "@/components/GanttChart";
+import dynamic from "next/dynamic";
+
+const GanttChart = dynamic(() => import("@/components/GanttChart").then((m) => m.GanttChart), {
+  ssr: false,
+  loading: () => <div className="h-64 rounded-2xl border border-soft bg-white p-6 animate-pulse" />,
+});
 import { ExecutiveTimeline } from "@/components/roadmap/ExecutiveTimeline";
 import { Milestone, Ticket, Task } from "@/lib/types";
 import { Layers, BarChart3 } from "lucide-react";
