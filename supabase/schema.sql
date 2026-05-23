@@ -3070,3 +3070,280 @@ create index if not exists idx_leave_balances_lookup on public.leave_balances(te
 create index if not exists idx_leave_requests_tenant_user on public.leave_requests(tenant_id, user_id);
 create index if not exists idx_leave_requests_tenant_status on public.leave_requests(tenant_id, status);
 create index if not exists idx_leave_requests_dates on public.leave_requests(start_date, end_date);
+
+-- Chat Feature Database Schema
+
+-- Conversation types:
+--   'workspace': Single channel for all organization members
+--   'direct': Private 1:1 DM between two users
+--   'group': Private group with named members
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'conversation_type') THEN
+    CREATE TYPE public.conversation_type AS ENUM ('workspace', 'direct', 'group');
+  END IF;
+END $$;
+
+-- Represents a conversation channel
+CREATE TABLE IF NOT EXISTS public.chat_conversations (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  type            public.conversation_type NOT NULL DEFAULT 'direct',
+  title           text NULL,
+  avatar_url      text NULL,
+  created_by      uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversations_workspace 
+  ON public.chat_conversations(tenant_id) 
+  WHERE type = 'workspace';
+
+-- Track who is in which conversation
+CREATE TABLE IF NOT EXISTS public.chat_participants (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id uuid NOT NULL REFERENCES public.chat_conversations(id) ON DELETE CASCADE,
+  user_id         uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  tenant_id       uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  joined_at       timestamptz NOT NULL DEFAULT now(),
+  last_read_at    timestamptz NULL,
+  created_by      uuid NULL REFERENCES public.users(id) ON DELETE SET NULL,
+  UNIQUE (conversation_id, user_id)
+);
+
+-- Individual chat messages
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  conversation_id uuid NOT NULL REFERENCES public.chat_conversations(id) ON DELETE CASCADE,
+  sender_id       uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  content         text NOT NULL,
+  reply_to_id     uuid NULL REFERENCES public.chat_messages(id) ON DELETE SET NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_tenant ON public.chat_conversations(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON public.chat_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_participants_conversation ON public.chat_participants(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON public.chat_messages(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_sender ON public.chat_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON public.chat_messages(created_at DESC);
+
+-- Helper function to get or create a DM between two users
+CREATE OR REPLACE FUNCTION public.ensure_direct_conversation(
+  p_tenant_id uuid,
+  p_user1_id uuid,
+  p_user2_id uuid
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_conv_id uuid;
+BEGIN
+  SELECT cp1.conversation_id INTO v_conv_id
+  FROM public.chat_participants cp1
+  JOIN public.chat_participants cp2 ON cp1.conversation_id = cp2.conversation_id
+  JOIN public.chat_conversations c ON c.id = cp1.conversation_id
+  WHERE c.tenant_id = p_tenant_id
+    AND c.type = 'direct'
+    AND cp1.user_id = p_user1_id
+    AND cp2.user_id = p_user2_id
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN v_conv_id;
+  END IF;
+
+  INSERT INTO public.chat_conversations (tenant_id, type, created_by)
+  VALUES (p_tenant_id, 'direct', p_user1_id)
+  RETURNING id INTO v_conv_id;
+
+  INSERT INTO public.chat_participants (conversation_id, user_id, tenant_id, created_by)
+  VALUES
+    (v_conv_id, p_user1_id, p_tenant_id, p_user1_id),
+    (v_conv_id, p_user2_id, p_tenant_id, p_user1_id);
+
+  RETURN v_conv_id;
+END;
+$$;
+
+-- Helper function to ensure workspace conversation exists for tenant
+CREATE OR REPLACE FUNCTION public.ensure_workspace_conversation(
+  p_tenant_id uuid
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_conv_id uuid;
+BEGIN
+  SELECT id INTO v_conv_id
+  FROM public.chat_conversations
+  WHERE tenant_id = p_tenant_id
+    AND type = 'workspace'
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN v_conv_id;
+  END IF;
+
+  INSERT INTO public.chat_conversations (tenant_id, type, title)
+  VALUES (p_tenant_id, 'workspace', 'Workspace')
+  RETURNING id INTO v_conv_id;
+
+  RETURN v_conv_id;
+END;
+$$;
+
+-- Enable RLS
+ALTER TABLE public.chat_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for conversations
+DROP POLICY IF EXISTS chat_conversations_select_member ON public.chat_conversations;
+CREATE POLICY chat_conversations_select_member ON public.chat_conversations
+FOR SELECT
+USING (
+  public.is_tenant_member(tenant_id)
+  AND (
+    type = 'workspace'
+    OR
+    EXISTS (
+      SELECT 1 FROM public.chat_participants p
+      WHERE p.conversation_id = chat_conversations.id
+        AND p.user_id = public.current_app_user_id()
+    )
+  )
+);
+
+DROP POLICY IF EXISTS chat_conversations_insert_member ON public.chat_conversations;
+CREATE POLICY chat_conversations_insert_member ON public.chat_conversations
+FOR INSERT
+WITH CHECK (
+  public.is_tenant_member(tenant_id)
+);
+
+DROP POLICY IF EXISTS chat_conversations_update_owner ON public.chat_conversations;
+CREATE POLICY chat_conversations_update_owner ON public.chat_conversations
+FOR UPDATE
+USING (
+  created_by = public.current_app_user_id()
+  OR
+  public.has_tenant_role(tenant_id, array['owner','admin'])
+);
+
+-- RLS Policies for participants
+DROP POLICY IF EXISTS chat_participants_select_member ON public.chat_participants;
+CREATE POLICY chat_participants_select_member ON public.chat_participants
+FOR SELECT
+USING (
+  public.is_tenant_member(tenant_id)
+);
+
+DROP POLICY IF EXISTS chat_participants_insert_owner ON public.chat_participants;
+CREATE POLICY chat_participants_insert_owner ON public.chat_participants
+FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.chat_conversations c
+    WHERE c.id = conversation_id
+      AND (
+        c.created_by = public.current_app_user_id()
+        OR
+        public.has_tenant_role(c.tenant_id, array['owner','admin'])
+      )
+  )
+);
+
+DROP POLICY IF EXISTS chat_participants_delete_owner ON public.chat_participants;
+CREATE POLICY chat_participants_delete_owner ON public.chat_participants
+FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1 FROM public.chat_conversations c
+    WHERE c.id = conversation_id
+      AND (
+        c.created_by = public.current_app_user_id()
+        OR
+        public.has_tenant_role(c.tenant_id, array['owner','admin'])
+      )
+  )
+  OR
+  user_id = public.current_app_user_id()
+);
+
+-- RLS Policies for messages
+DROP POLICY IF EXISTS chat_messages_select_member ON public.chat_messages;
+CREATE POLICY chat_messages_select_member ON public.chat_messages
+FOR SELECT
+USING (
+  public.is_tenant_member(tenant_id)
+  AND (
+    EXISTS (
+      SELECT 1 FROM public.chat_conversations c
+      WHERE c.id = chat_messages.conversation_id
+        AND (
+          c.type = 'workspace'
+          OR
+          EXISTS (
+            SELECT 1 FROM public.chat_participants p
+            WHERE p.conversation_id = c.id
+              AND p.user_id = public.current_app_user_id()
+          )
+        )
+    )
+  )
+);
+
+DROP POLICY IF EXISTS chat_messages_insert_member ON public.chat_messages;
+CREATE POLICY chat_messages_insert_member ON public.chat_messages
+FOR INSERT
+WITH CHECK (
+  sender_id = public.current_app_user_id()
+  AND
+  EXISTS (
+    SELECT 1 FROM public.chat_conversations c
+    WHERE c.id = conversation_id
+      AND (
+        c.type = 'workspace'
+        OR
+        EXISTS (
+          SELECT 1 FROM public.chat_participants p
+          WHERE p.conversation_id = c.id
+            AND p.user_id = public.current_app_user_id()
+        )
+      )
+  )
+);
+
+DROP POLICY IF EXISTS chat_messages_delete_own ON public.chat_messages;
+CREATE POLICY chat_messages_delete_own ON public.chat_messages
+FOR DELETE
+USING (
+  sender_id = public.current_app_user_id()
+  OR
+  public.has_tenant_role(tenant_id, array['owner','admin'])
+);
+
+-- updated_at triggers
+DROP TRIGGER IF EXISTS trg_chat_conversations_updated_at ON public.chat_conversations;
+CREATE TRIGGER trg_chat_conversations_updated_at BEFORE UPDATE ON public.chat_conversations
+FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+DROP TRIGGER IF EXISTS trg_chat_messages_updated_at ON public.chat_messages;
+CREATE TRIGGER trg_chat_messages_updated_at BEFORE UPDATE ON public.chat_messages
+FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+-- Add 'chat' module if not exists
+INSERT INTO public.modules (key, label) VALUES
+  ('chat', 'Chat')
+ON CONFLICT (key)
+DO UPDATE SET label = excluded.label;

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { GanttChart } from "@/components/GanttChart";
+import { RoadmapViewSelector } from "@/components/roadmap/RoadmapViewSelector";
 import { Task } from "@/lib/types";
 
 async function createMilestone(formData: FormData) {
@@ -186,25 +187,26 @@ export default async function RoadmapPage({ params, searchParams }: {
       </div>
 
       <div className="space-y-6">
-        <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
-          <div className="bg-slate-50 border-b border-soft px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-white border border-soft flex items-center justify-center shadow-sm">
-                <CalendarIcon className="h-5 w-5 text-violet-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-black text-main">{activeProject?.name || "All Projects"}</h2>
-                <p className="text-xs font-bold text-muted uppercase tracking-wider">Gantt Visualization</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-                <Badge variant="outline" className="bg-white border-soft text-muted font-bold">Day View</Badge>
-            </div>
-          </div>
-          <div className="p-6">
-            <GanttChart tasks={tasks || []} milestones={milestones || []} tickets={tickets || []} />
-          </div>
-        </Card>
+         <Card className="p-0 overflow-hidden border-none shadow-xl shadow-slate-200/50">
+           <div className="bg-slate-50 border-b border-soft px-6 py-4 flex items-center justify-between">
+             <div className="flex items-center gap-3">
+               <div className="h-10 w-10 rounded-2xl bg-white border border-soft flex items-center justify-center shadow-sm">
+                 <CalendarIcon className="h-5 w-5 text-violet-600" />
+               </div>
+               <div>
+                 <h2 className="text-lg font-black text-main">{activeProject?.name || "All Projects"}</h2>
+                 <p className="text-xs font-bold text-muted uppercase tracking-wider">Project Roadmap</p>
+               </div>
+             </div>
+           </div>
+           <div className="p-6">
+             <RoadmapViewSelector
+               tasks={tasks || []}
+               milestones={milestones || []}
+               tickets={tickets || []}
+             />
+           </div>
+         </Card>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

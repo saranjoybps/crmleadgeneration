@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { LifeBuoy, Bell } from "lucide-react";
+import { LifeBuoy, Bell, MessageSquare } from "lucide-react";
+import Link from "next/link";
 
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
@@ -83,23 +84,31 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                 <div>
                   <p className="mt-1 text-lg font-semibold uppercase text-main">{org.organization_name}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-                    aria-label="Help"
-                    title="Help"
-                  >
-                    <LifeBuoy className="h-5 w-5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-                    aria-label="Notifications"
-                    title="Notifications"
-                  >
-                    <Bell className="h-5 w-5" />
-                  </button>
+                 <div className="flex items-center gap-2">
+                   <Link
+                     href={`/o/${org.organization_slug}/dashboard/chat`}
+                     className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                     aria-label="Chat"
+                     title="Chat"
+                   >
+                     <MessageSquare className="h-5 w-5" />
+                   </Link>
+                   <button
+                     type="button"
+                     className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                     aria-label="Help"
+                     title="Help"
+                   >
+                     <LifeBuoy className="h-5 w-5" />
+                   </button>
+                   <button
+                     type="button"
+                     className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                     aria-label="Notifications"
+                     title="Notifications"
+                   >
+                     <Bell className="h-5 w-5" />
+                   </button>
                   <ProfileMenu
                     email={user.email ?? "unknown@joycrm.app"}
                     role={org.role}
