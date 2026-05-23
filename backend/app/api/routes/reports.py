@@ -17,6 +17,7 @@ REPORT_HANDLERS = {
     "time-entries": ReportService.time_entries,
     "recruitment": ReportService.recruitment,
     "users": ReportService.users,
+    "payroll-summary": ReportService.payroll_summary,
 }
 
 

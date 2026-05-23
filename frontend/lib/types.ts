@@ -134,7 +134,7 @@ export type Task = {
   dependencies?: TaskDependency[];
 };
 
-export type AttendanceStatus = "present" | "late" | "half_day" | "absent" | "overtime";
+export type AttendanceStatus = "present" | "late" | "half_day" | "absent" | "overtime" | "on_leave";
 
 export type Shift = {
   id: string;
@@ -343,6 +343,7 @@ export type LeaveType = {
   days_per_year: number;
   requires_approval: boolean;
   is_active: boolean;
+  is_paid: boolean;
   sort_order: number;
   color: string | null;
   created_at: string;
@@ -407,5 +408,88 @@ export type GeneratedDocument = {
   document_type?: Partial<DocumentType>;
   employee?: Partial<User>;
   generated_by_user?: Partial<User>;
+};
+
+// ---- Payroll ----
+
+export type SalaryComponent = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  type: "earning" | "deduction";
+  calculation_type: "fixed" | "percentage";
+  default_value: number;
+  percentage_of: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EmployeeSalaryComponent = {
+  id: string;
+  tenant_id: string;
+  employee_salary_id: string;
+  component_id: string;
+  amount: number;
+  created_at: string;
+  component?: SalaryComponent;
+};
+
+export type EmployeeSalary = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  monthly_ctc: number;
+  status: "active" | "inactive";
+  created_at: string;
+  updated_at: string;
+  user?: Partial<User>;
+  components?: EmployeeSalaryComponent[];
+};
+
+export type PayrollSettings = {
+  id: string;
+  tenant_id: string;
+  pay_period_type: "monthly" | "bi-weekly";
+  pay_day: number;
+  currency: string;
+  enable_tax: boolean;
+  enable_pf: boolean;
+  enable_esi: boolean;
+  pf_employee_share: number;
+  pf_employer_share: number;
+  pf_wage_limit: number;
+  esi_employee_share: number;
+  esi_employer_share: number;
+  esi_wage_limit: number;
+  updated_at: string;
+};
+
+export type TaxSlab = {
+  id: string;
+  tenant_id: string;
+  financial_year: string;
+  from_amount: number;
+  to_amount: number | null;
+  tax_rate: number;
+  additional_cess: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayrollSummary = {
+  total_employees: number;
+  active_salaries: number;
+  monthly_payroll_cost: number;
+  average_ctc: number;
+  department_breakdown: Array<{
+    department: string;
+    employee_count: number;
+    monthly_cost: number;
+  }>;
 };
 

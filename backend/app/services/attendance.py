@@ -239,6 +239,9 @@ class AttendanceService:
             .execute()
         )
         if existing.data:
+            existing_status = existing.data[0].get("status")
+            if existing_status == "on_leave":
+                raise HTTPException(status_code=409, detail="Cannot check in. You are on approved leave today.")
             raise HTTPException(status_code=409, detail="Already checked in today")
 
         assignment = AttendanceService.get_user_active_shift(supabase, ctx)
@@ -294,8 +297,13 @@ class AttendanceService:
         record = rows[0]
         if record.get("check_out_time"):
             raise HTTPException(status_code=409, detail="Already checked out today")
+        if record.get("status") == "on_leave":
+            raise HTTPException(status_code=409, detail="Cannot check out. You are on approved leave today.")
 
-        check_in_time = datetime.fromisoformat(record["check_in_time"].replace("Z", "+00:00"))
+        check_in_time = record.get("check_in_time")
+        if not check_in_time:
+            raise HTTPException(status_code=400, detail="No check-in time recorded. Cannot check out.")
+        check_in_time = datetime.fromisoformat(check_in_time.replace("Z", "+00:00"))
         shift_record = record.get("shift")
         status = record["status"]
         working_mins = None
@@ -390,10 +398,62 @@ class AttendanceService:
 
         update_data["corrected_by"] = ctx.app_user_id
 
-        if "check_in_time" in update_data and update_data["check_in_time"]:
-            update_data["check_in_time"] = update_data["check_in_time"].isoformat()
-        if "check_out_time" in update_data and update_data["check_out_time"]:
-            update_data["check_out_time"] = update_data["check_out_time"].isoformat()
+        check_in_val = update_data.get("check_in_time")
+        check_out_val = update_data.get("check_out_time")
+        if check_in_val:
+            update_data["check_in_time"] = check_in_val.isoformat()
+        if check_out_val:
+            update_data["check_out_time"] = check_out_val.isoformat()
+
+        # Recalculate working_minutes, status, late_minutes, overtime_minutes
+        existing = (
+            supabase.table("attendance_records")
+            .select("*, shift:shift_id(*)")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("id", record_id)
+            .execute()
+        )
+        row = (existing.data or [None])[0]
+        if row:
+            check_in = check_in_val or row.get("check_in_time")
+            check_out = check_out_val or row.get("check_out_time")
+            shift_record = row.get("shift")
+
+            if check_in and check_out:
+                if isinstance(check_in, str):
+                    check_in = datetime.fromisoformat(check_in.replace("Z", "+00:00"))
+                if isinstance(check_out, str):
+                    check_out = datetime.fromisoformat(check_out.replace("Z", "+00:00"))
+
+                if shift_record:
+                    start_time = time.fromisoformat(shift_record["start_time"])
+                    end_time = time.fromisoformat(shift_record["end_time"])
+                    half_day = shift_record.get("half_day_after_minutes", 240)
+                    status, working_mins, overtime_mins = _determine_checkout_status(
+                        check_in, check_out, start_time, end_time, half_day,
+                    )
+                    update_data["status"] = status
+                    update_data["working_minutes"] = working_mins
+                    update_data["overtime_minutes"] = overtime_mins
+
+                    grace = shift_record.get("grace_period_minutes", 5)
+                    late_thresh = shift_record.get("late_threshold_minutes", 30)
+                    _, late_mins = _determine_checkin_status(check_in, start_time, grace, late_thresh)
+                    update_data["late_minutes"] = late_mins if late_mins > 0 else None
+                else:
+                    working_mins = int((check_out - check_in).total_seconds() / 60)
+                    update_data["working_minutes"] = working_mins
+
+            elif check_in and not check_out:
+                if isinstance(check_in, str):
+                    check_in = datetime.fromisoformat(check_in.replace("Z", "+00:00"))
+                if shift_record:
+                    start_time = time.fromisoformat(shift_record["start_time"])
+                    grace = shift_record.get("grace_period_minutes", 5)
+                    late_thresh = shift_record.get("late_threshold_minutes", 30)
+                    status, late_mins = _determine_checkin_status(check_in, start_time, grace, late_thresh)
+                    update_data["status"] = status
+                    update_data["late_minutes"] = late_mins if late_mins > 0 else None
 
         updated = (
             supabase.table("attendance_records")

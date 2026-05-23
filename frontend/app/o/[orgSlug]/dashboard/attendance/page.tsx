@@ -56,6 +56,7 @@ const STATUS_BADGE: Record<AttendanceStatus, { label: string; variant: "success"
   half_day: { label: "Half Day", variant: "info" },
   absent: { label: "Absent", variant: "danger" },
   overtime: { label: "Overtime", variant: "secondary" },
+  on_leave: { label: "On Leave", variant: "info" },
 };
 
 function formatMinutes(mins: number | null): string {
@@ -93,7 +94,8 @@ export default async function AttendancePage({ params, searchParams }: Attendanc
     "/api/v1/attendance/records", { orgSlug }
   );
 
-  const isCheckedIn = todayRecord && !todayRecord.check_out_time;
+  const isOnLeave = todayRecord?.status === "on_leave";
+  const isCheckedIn = todayRecord && !todayRecord.check_out_time && !isOnLeave;
   const isCheckedOut = todayRecord && todayRecord.check_out_time;
   const canCheckIn = attPerm.can_create && !todayRecord;
   const canCheckOut = attPerm.can_edit && isCheckedIn;
@@ -139,11 +141,14 @@ export default async function AttendancePage({ params, searchParams }: Attendanc
             <div className={cn(
               "mb-6 flex h-24 w-24 items-center justify-center rounded-full",
               isCheckedOut ? "bg-slate-100 text-slate-400" :
+              isOnLeave ? "bg-sky-50 text-sky-600" :
               isCheckedIn ? "bg-emerald-50 text-emerald-600" :
               "bg-violet-50 text-violet-600"
             )}>
               {isCheckedOut ? (
                 <LogOut className="h-10 w-10" />
+              ) : isOnLeave ? (
+                <Calendar className="h-10 w-10" />
               ) : isCheckedIn ? (
                 <LogIn className="h-10 w-10" />
               ) : (
@@ -153,9 +158,16 @@ export default async function AttendancePage({ params, searchParams }: Attendanc
 
             <h2 className="text-2xl font-bold text-main">
               {isCheckedOut ? "Checked Out" :
+               isOnLeave ? "On Leave" :
                isCheckedIn ? "Checked In" :
                "Not Checked In"}
             </h2>
+
+            {isOnLeave && (
+              <p className="mt-1 text-sm text-muted">
+                {todayRecord!.check_in_note || "Approved leave"}
+              </p>
+            )}
 
             {todayRecord && todayRecord.shift && (
               <p className="mt-1 text-sm text-muted">

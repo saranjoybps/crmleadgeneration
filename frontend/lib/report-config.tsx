@@ -1,4 +1,4 @@
-import { Briefcase, Ticket, CheckSquare, Clock, CalendarCheck, Timer, UserPlus, Users } from "lucide-react";
+import { Briefcase, Ticket, CheckSquare, Clock, CalendarCheck, Timer, UserPlus, Users, IndianRupee } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Column, FilterConfig } from "@/components/ReportCard";
 
@@ -213,6 +213,28 @@ export const REPORTS: ReportConfig[] = [
       { key: "created_at", label: "Joined" },
     ],
     filters: [],
+  },
+  {
+    key: "payroll-summary",
+    title: "Payroll Summary",
+    description: "Employee salary details with monthly and annual costs",
+    icon: <IndianRupee className="h-5 w-5" />,
+    columns: [
+      { key: "employee_name", label: "Employee" },
+      { key: "email", label: "Email" },
+      { key: "department", label: "Department" },
+      { key: "monthly_ctc", label: "Monthly CTC" },
+      { key: "annual_ctc", label: "Annual CTC" },
+      { key: "effective_from", label: "Effective From" },
+      { key: "status", label: "Status" },
+    ],
+    filters: [
+      { key: "status", label: "Status", type: "status", options: [
+        { label: "All", value: "" },
+        { label: "Active", value: "active" },
+        { label: "Inactive", value: "inactive" },
+      ]},
+    ],
   },
 ];
 

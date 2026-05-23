@@ -23,6 +23,7 @@ import {
   Megaphone,
   BarChart3,
   FileSpreadsheet,
+  Receipt,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -55,6 +56,8 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
     label: "Overview",
     links: [
       { href: "/dashboard", moduleKey: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/analytics", moduleKey: "analytics", label: "Analytics", icon: BarChart3, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/reports", moduleKey: "reports", label: "Reports", icon: FileSpreadsheet, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/announcements", moduleKey: "announcement", label: "Announcements", icon: Megaphone, roles: ["owner", "admin", "member", "client"] },
     ],
   },
@@ -78,14 +81,7 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
       { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
-    ],
-  },
-  {
-    key: "insights",
-    label: "Insights",
-    links: [
-      { href: "/dashboard/analytics", moduleKey: "analytics", label: "Analytics", icon: BarChart3, roles: ["owner", "admin", "member"] },
-      { href: "/dashboard/reports", moduleKey: "reports", label: "Reports", icon: FileSpreadsheet, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/payroll", moduleKey: "payroll", label: "Payroll", icon: Receipt, roles: ["owner", "admin", "member"] },
     ],
   },
   {

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, projects, tasks, tickets, users, workspace, dashboard, comments, todos, milestones, rbac, departments, vault, attendance, recruitment, documents, leave, announcements, reports, analytics
+from app.api.routes import auth, projects, tasks, tickets, users, workspace, dashboard, comments, todos, milestones, rbac, departments, vault, attendance, recruitment, documents, leave, announcements, reports, analytics, payroll
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -23,3 +23,4 @@ api_router.include_router(leave.router)
 api_router.include_router(announcements.router)
 api_router.include_router(reports.router)
 api_router.include_router(analytics.router)
+api_router.include_router(payroll.router)

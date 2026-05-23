@@ -645,6 +645,7 @@ create table if not exists public.leave_types (
   days_per_year numeric(5,1) not null default 0,
   requires_approval boolean not null default true,
   is_active boolean not null default true,
+  is_paid boolean not null default true,
   sort_order int not null default 0,
   color text,
   created_at timestamptz not null default now(),
@@ -1063,6 +1064,36 @@ begin
 end;
 $$;
 
+drop function if exists public.seed_default_salary_components(uuid);
+create or replace function public.seed_default_salary_components(p_tenant_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.salary_components (tenant_id, name, type, calculation_type, default_value, is_active, sort_order)
+  select p_tenant_id, name, type, calculation_type, default_value, is_active, sort_order
+  from (values
+    ('Basic Pay', 'earning', 'fixed', 0, true, 1),
+    ('House Rent Allowance', 'earning', 'fixed', 0, true, 2),
+    ('Dearness Allowance', 'earning', 'fixed', 0, true, 3),
+    ('Conveyance Allowance', 'earning', 'fixed', 0, true, 4),
+    ('Medical Allowance', 'earning', 'fixed', 0, true, 5),
+    ('Special Allowance', 'earning', 'fixed', 0, true, 6)
+  ) as c(name, type, calculation_type, default_value, is_active, sort_order)
+  on conflict (tenant_id, name) do nothing;
+
+  insert into public.salary_components (tenant_id, name, type, calculation_type, default_value, percentage_of, is_active, sort_order)
+  select p_tenant_id, name, type, calculation_type, default_value, percentage_of, is_active, sort_order
+  from (values
+    ('Provident Fund', 'deduction', 'percentage', 12, 'Basic Pay', true, 7),
+    ('Professional Tax', 'deduction', 'fixed', 200, null, true, 8)
+  ) as c(name, type, calculation_type, default_value, percentage_of, is_active, sort_order)
+  on conflict (tenant_id, name) do nothing;
+end;
+$$;
+
 drop function if exists public.ensure_user_tenant(text);
 create or replace function public.ensure_user_tenant(p_tenant_slug text default null)
 returns table (tenant_id uuid, tenant_slug text, tenant_name text, role_key text, department_id uuid, department_name text)
@@ -1152,6 +1183,9 @@ begin
   insert into public.user_departments (user_id, department_id)
   values (v_app_user_id, v_department_id)
   on conflict (user_id, department_id) do update set updated_at = now();
+
+  -- Seed default salary components for new tenant
+  perform public.seed_default_salary_components(v_tenant_id);
 
   return query
   select
@@ -2021,6 +2055,7 @@ with check (
 -- ----------
 grant execute on function public.ensure_app_user() to authenticated;
 grant execute on function public.ensure_user_tenant(text) to authenticated;
+grant execute on function public.seed_default_salary_components(uuid) to authenticated;
 grant execute on function public.create_tenant_invite(uuid, text, uuid) to authenticated;
 grant execute on function public.accept_tenant_invite(text) to authenticated;
 grant execute on function public.can_access_vault_credential(uuid, uuid) to authenticated;
@@ -2658,6 +2693,199 @@ on conflict (key) do update set label = excluded.label;
 insert into public.modules (key, label) values ('analytics', 'Analytics')
 on conflict (key) do update set label = excluded.label;
 
+-- ----------
+-- Payroll Module
+-- ----------
+insert into public.modules (key, label) values ('payroll', 'Payroll')
+on conflict (key) do update set label = excluded.label;
+
+create table if not exists public.salary_components (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  type text not null check (type in ('earning', 'deduction')),
+  calculation_type text not null default 'fixed' check (calculation_type in ('fixed', 'percentage')),
+  default_value numeric(12,2) not null default 0,
+  percentage_of text,
+  is_active boolean not null default true,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint salary_components_name_tenant_unique unique (tenant_id, name)
+);
+
+create table if not exists public.employee_salaries (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  effective_from date not null,
+  effective_to date,
+  monthly_ctc numeric(12,2) not null default 0,
+  status text not null default 'active' check (status in ('active', 'inactive')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint employee_salaries_user_effective_unique unique (tenant_id, user_id, effective_from)
+);
+
+create table if not exists public.employee_salary_components (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  employee_salary_id uuid not null references public.employee_salaries(id) on delete cascade,
+  component_id uuid not null references public.salary_components(id) on delete cascade,
+  amount numeric(12,2) not null default 0,
+  created_at timestamptz not null default now(),
+  constraint employee_salary_components_unique unique (tenant_id, employee_salary_id, component_id)
+);
+
+create table if not exists public.payroll_settings (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade unique,
+  pay_period_type text not null default 'monthly' check (pay_period_type in ('monthly', 'bi-weekly')),
+  pay_day int not null default 1,
+  currency text not null default 'INR',
+  enable_tax boolean not null default true,
+  enable_pf boolean not null default true,
+  enable_esi boolean not null default false,
+  pf_employee_share numeric(5,2) not null default 12,
+  pf_employer_share numeric(5,2) not null default 12,
+  pf_wage_limit numeric(12,2) not null default 15000,
+  esi_employee_share numeric(5,2) not null default 0.75,
+  esi_employer_share numeric(5,2) not null default 3.25,
+  esi_wage_limit numeric(12,2) not null default 21000,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.tax_slabs (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  financial_year text not null,
+  from_amount numeric(12,2) not null default 0,
+  to_amount numeric(12,2),
+  tax_rate numeric(5,2) not null default 0,
+  additional_cess numeric(5,2) not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Payroll updated_at triggers
+drop trigger if exists trg_salary_components_updated_at on public.salary_components;
+create trigger trg_salary_components_updated_at
+  before update on public.salary_components
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_employee_salaries_updated_at on public.employee_salaries;
+create trigger trg_employee_salaries_updated_at
+  before update on public.employee_salaries
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_payroll_settings_updated_at on public.payroll_settings;
+create trigger trg_payroll_settings_updated_at
+  before update on public.payroll_settings
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_tax_slabs_updated_at on public.tax_slabs;
+create trigger trg_tax_slabs_updated_at
+  before update on public.tax_slabs
+  for each row execute function public.touch_updated_at();
+
+-- Enable RLS
+alter table public.salary_components enable row level security;
+alter table public.employee_salaries enable row level security;
+alter table public.employee_salary_components enable row level security;
+alter table public.payroll_settings enable row level security;
+alter table public.tax_slabs enable row level security;
+
+-- Salary Components RLS
+drop policy if exists salary_components_select_member on public.salary_components;
+create policy salary_components_select_member on public.salary_components
+  for select using (public.has_module_permission(tenant_id, 'payroll', 'view'));
+
+drop policy if exists salary_components_insert_admin on public.salary_components;
+create policy salary_components_insert_admin on public.salary_components
+  for insert with check (public.has_module_permission(tenant_id, 'payroll', 'create'));
+
+drop policy if exists salary_components_update_admin on public.salary_components;
+create policy salary_components_update_admin on public.salary_components
+  for update using (public.has_module_permission(tenant_id, 'payroll', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists salary_components_delete_admin on public.salary_components;
+create policy salary_components_delete_admin on public.salary_components
+  for delete using (public.has_module_permission(tenant_id, 'payroll', 'delete'));
+
+-- Employee Salaries RLS
+drop policy if exists employee_salaries_select_member on public.employee_salaries;
+create policy employee_salaries_select_member on public.employee_salaries
+  for select using (public.has_module_permission(tenant_id, 'payroll', 'view'));
+
+drop policy if exists employee_salaries_insert_admin on public.employee_salaries;
+create policy employee_salaries_insert_admin on public.employee_salaries
+  for insert with check (public.has_module_permission(tenant_id, 'payroll', 'create'));
+
+drop policy if exists employee_salaries_update_admin on public.employee_salaries;
+create policy employee_salaries_update_admin on public.employee_salaries
+  for update using (public.has_module_permission(tenant_id, 'payroll', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists employee_salaries_delete_admin on public.employee_salaries;
+create policy employee_salaries_delete_admin on public.employee_salaries
+  for delete using (public.has_module_permission(tenant_id, 'payroll', 'delete'));
+
+-- Employee Salary Components RLS
+drop policy if exists emp_salary_components_select_member on public.employee_salary_components;
+create policy emp_salary_components_select_member on public.employee_salary_components
+  for select using (public.has_module_permission(tenant_id, 'payroll', 'view'));
+
+drop policy if exists emp_salary_components_insert_admin on public.employee_salary_components;
+create policy emp_salary_components_insert_admin on public.employee_salary_components
+  for insert with check (public.has_module_permission(tenant_id, 'payroll', 'create'));
+
+drop policy if exists emp_salary_components_update_admin on public.employee_salary_components;
+create policy emp_salary_components_update_admin on public.employee_salary_components
+  for update using (public.has_module_permission(tenant_id, 'payroll', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists emp_salary_components_delete_admin on public.employee_salary_components;
+create policy emp_salary_components_delete_admin on public.employee_salary_components
+  for delete using (public.has_module_permission(tenant_id, 'payroll', 'delete'));
+
+-- Payroll Settings RLS
+drop policy if exists payroll_settings_select_member on public.payroll_settings;
+create policy payroll_settings_select_member on public.payroll_settings
+  for select using (public.has_module_permission(tenant_id, 'payroll', 'view'));
+
+drop policy if exists payroll_settings_insert_admin on public.payroll_settings;
+create policy payroll_settings_insert_admin on public.payroll_settings
+  for insert with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists payroll_settings_update_admin on public.payroll_settings;
+create policy payroll_settings_update_admin on public.payroll_settings
+  for update using (public.has_module_permission(tenant_id, 'payroll', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists payroll_settings_delete_admin on public.payroll_settings;
+create policy payroll_settings_delete_admin on public.payroll_settings
+  for delete using (public.has_module_permission(tenant_id, 'payroll', 'delete'));
+
+-- Tax Slabs RLS
+drop policy if exists tax_slabs_select_member on public.tax_slabs;
+create policy tax_slabs_select_member on public.tax_slabs
+  for select using (public.has_module_permission(tenant_id, 'payroll', 'view'));
+
+drop policy if exists tax_slabs_insert_admin on public.tax_slabs;
+create policy tax_slabs_insert_admin on public.tax_slabs
+  for insert with check (public.has_module_permission(tenant_id, 'payroll', 'create'));
+
+drop policy if exists tax_slabs_update_admin on public.tax_slabs;
+create policy tax_slabs_update_admin on public.tax_slabs
+  for update using (public.has_module_permission(tenant_id, 'payroll', 'edit'))
+  with check (public.has_module_permission(tenant_id, 'payroll', 'edit'));
+
+drop policy if exists tax_slabs_delete_admin on public.tax_slabs;
+create policy tax_slabs_delete_admin on public.tax_slabs
+  for delete using (public.has_module_permission(tenant_id, 'payroll', 'delete'));
+
 create table if not exists public.announcements (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -2800,16 +3028,42 @@ create index if not exists idx_document_templates_type on public.document_templa
 create index if not exists idx_generated_documents_tenant on public.generated_documents(tenant_id);
 create index if not exists idx_generated_documents_employee on public.generated_documents(employee_id);
 create index if not exists idx_generated_documents_type on public.generated_documents(document_type_id);
--- Seed global leave types
-insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, sort_order, color) values
-  (null, 'Annual Leave', 'Paid time off for vacation or personal time', 20, true, true, 1, '#7c3aed'),
-  (null, 'Sick Leave', 'Time off for medical reasons', 12, true, true, 2, '#ef4444'),
-  (null, 'Personal Leave', 'Time off for personal or family matters', 5, true, true, 3, '#f59e0b'),
-  (null, 'Casual Leave', 'Short notice time off for emergencies', 6, true, true, 4, '#22c55e'),
-  (null, 'Maternity Leave', 'Leave for childbirth and childcare', 90, true, true, 5, '#ec4899'),
-  (null, 'Paternity Leave', 'Leave for new fathers', 10, true, true, 6, '#3b82f6')
-on conflict (tenant_id, name) do nothing;
+-- Seed global leave types (DO block to avoid null-on-conflict issue)
+do $$
+begin
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Annual Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Annual Leave', 'Paid time off for vacation or personal time', 20, true, true, true, 1, '#7c3aed');
+  end if;
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Sick Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Sick Leave', 'Time off for medical reasons', 12, true, true, true, 2, '#ef4444');
+  end if;
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Personal Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Personal Leave', 'Time off for personal or family matters', 5, true, true, false, 3, '#f59e0b');
+  end if;
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Casual Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Casual Leave', 'Short notice time off for emergencies', 6, true, true, true, 4, '#22c55e');
+  end if;
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Maternity Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Maternity Leave', 'Leave for childbirth and childcare', 90, true, true, true, 5, '#ec4899');
+  end if;
+  if not exists (select 1 from public.leave_types where tenant_id is null and name = 'Paternity Leave') then
+    insert into public.leave_types (tenant_id, name, description, days_per_year, requires_approval, is_active, is_paid, sort_order, color) values
+      (null, 'Paternity Leave', 'Leave for new fathers', 10, true, true, true, 6, '#3b82f6');
+  end if;
+end $$;
 
+create index if not exists idx_salary_components_tenant on public.salary_components(tenant_id);
+create index if not exists idx_employee_salaries_tenant on public.employee_salaries(tenant_id);
+create index if not exists idx_employee_salaries_user on public.employee_salaries(tenant_id, user_id);
+create index if not exists idx_employee_salary_components_salary on public.employee_salary_components(employee_salary_id);
+create index if not exists idx_payroll_settings_tenant on public.payroll_settings(tenant_id);
+create index if not exists idx_tax_slabs_tenant on public.tax_slabs(tenant_id);
+create index if not exists idx_tax_slabs_financial_year on public.tax_slabs(tenant_id, financial_year);
 create index if not exists idx_leave_types_tenant on public.leave_types(tenant_id);
 create index if not exists idx_leave_balances_tenant_user on public.leave_balances(tenant_id, user_id, year);
 create index if not exists idx_leave_balances_lookup on public.leave_balances(tenant_id, user_id, leave_type_id, year);

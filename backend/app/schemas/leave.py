@@ -10,6 +10,7 @@ class LeaveTypeBase(BaseModel):
     days_per_year: Decimal = Field(default=0, max_digits=5, decimal_places=1)
     requires_approval: bool = True
     is_active: bool = True
+    is_paid: bool = True
     sort_order: int = 0
     color: str | None = None
 

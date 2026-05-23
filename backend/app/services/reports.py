@@ -227,3 +227,42 @@ class ReportService:
                 "created_at": r.get("created_at"),
             })
         return result
+
+    @staticmethod
+    def payroll_summary(supabase: Client, ctx: RequestContext, filters: dict | None = None):
+        f = filters or {}
+        rows = ReportService._fetch(supabase, ctx, "employee_salaries",
+                                     "id, user_id, effective_from, monthly_ctc, status",
+                                     status=f.get("status"))
+        user_ids = [r["user_id"] for r in rows if r.get("user_id")]
+        user_map = {}
+        dept_map = {}
+        if user_ids:
+            users = supabase.table("users").select("id, email, full_name").in_("id", list(set(user_ids))).execute()
+            for u in users.data or []:
+                user_map[u["id"]] = u
+            user_depts = (
+                supabase.table("user_departments")
+                .select("user_id, department:departments!inner(name)")
+                .in_("user_id", list(set(user_ids)))
+                .execute()
+            )
+            for ud in user_depts.data or []:
+                dept_name = ud.get("department", {}).get("name", "")
+                if dept_name:
+                    dept_map[ud["user_id"]] = dept_name
+
+        result = []
+        for r in rows:
+            user = user_map.get(r.get("user_id", ""), {})
+            m_ctc = float(r.get("monthly_ctc", 0))
+            result.append({
+                "employee_name": user.get("full_name") or user.get("email", ""),
+                "email": user.get("email", ""),
+                "department": dept_map.get(r.get("user_id", ""), ""),
+                "monthly_ctc": round(m_ctc, 2),
+                "annual_ctc": round(m_ctc * 12, 2),
+                "effective_from": r.get("effective_from"),
+                "status": r.get("status"),
+            })
+        return result

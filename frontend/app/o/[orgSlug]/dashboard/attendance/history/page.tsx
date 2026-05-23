@@ -34,6 +34,7 @@ const STATUS_BADGE: Record<AttendanceStatus, { label: string; variant: "success"
   half_day: { label: "Half Day", variant: "info" },
   absent: { label: "Absent", variant: "danger" },
   overtime: { label: "Overtime", variant: "secondary" },
+  on_leave: { label: "On Leave", variant: "info" },
 };
 
 function formatMinutes(mins: number | null): string {
@@ -193,6 +194,7 @@ export default async function HistoryPage({ params, searchParams }: HistoryPageP
               <option value="half_day">Half Day</option>
               <option value="absent">Absent</option>
               <option value="overtime">Overtime</option>
+              <option value="on_leave">On Leave</option>
             </select>
           </div>
           <input type="hidden" name="all" value={query.all || ""} />
@@ -322,6 +324,7 @@ export default async function HistoryPage({ params, searchParams }: HistoryPageP
                 <option value="half_day">Half Day</option>
                 <option value="absent">Absent</option>
                 <option value="overtime">Overtime</option>
+                <option value="on_leave">On Leave</option>
               </select>
             </div>
             <div>

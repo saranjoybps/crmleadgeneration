@@ -25,6 +25,7 @@ const STATUS_BADGE: Record<AttendanceStatus, { label: string; variant: "success"
   half_day: { label: "Half Day", variant: "info" },
   absent: { label: "Absent", variant: "danger" },
   overtime: { label: "Overtime", variant: "secondary" },
+  on_leave: { label: "On Leave", variant: "info" },
 };
 
 function formatMinutes(mins: number | null): string {
