@@ -22,6 +22,14 @@ async function checkInAction(formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/attendance`;
 
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "attendance")?.permissions.can_create ?? false;
+  if (!canCreate) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to check in.")}`);
+  }
+
   const { error } = await apiRequest("/api/v1/attendance/check-in", {
     method: "POST",
     orgSlug,
@@ -38,6 +46,14 @@ async function checkOutAction(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/attendance`;
+
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "attendance")?.permissions.can_edit ?? false;
+  if (!canEdit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to check out.")}`);
+  }
 
   const { error } = await apiRequest("/api/v1/attendance/check-out", {
     method: "POST",

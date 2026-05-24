@@ -83,6 +83,12 @@ export async function addDependency(formData: FormData) {
   const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "").trim();
   const type = String(formData.get("dependency_type") ?? "FS").trim();
   const path = `/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${taskId}`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
+  if (!canEdit) redirect(`${path}&error=${encodeURIComponent("Insufficient permissions to add dependencies.")}`);
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/dependencies`, {
     method: "POST",
@@ -100,6 +106,12 @@ export async function removeDependency(formData: FormData) {
   const taskId = String(formData.get("task_id") ?? "").trim();
   const dependsOnTaskId = String(formData.get("depends_on_task_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${taskId}`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
+  if (!canEdit) redirect(`${path}&error=${encodeURIComponent("Insufficient permissions to remove dependencies.")}`);
 
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/dependencies/${encodeURIComponent(dependsOnTaskId)}`, {
     method: "DELETE",
@@ -117,6 +129,12 @@ export async function updateTaskAssignees(formData: FormData) {
   const currentAssigneeIds = String(formData.get("current_assignee_ids") ?? "").split(",").filter(Boolean);
   const newAssigneeIds = formData.getAll("assignee_user_ids").map((x) => String(x).trim()).filter(Boolean);
   const path = `/o/${orgSlug}/dashboard/tasks`;
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
+  if (!canEdit) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to update assignees.")}`);
 
   const toAdd = newAssigneeIds.filter(id => !currentAssigneeIds.includes(id));
   const toRemove = currentAssigneeIds.filter(id => !newAssigneeIds.includes(id));
@@ -158,6 +176,12 @@ export async function deleteTask(formData: FormData) {
 }
 
 export async function updateTaskStatus(orgSlug: string, taskId: string, newStatus: string) {
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
+    orgSlug,
+    cache: "no-store",
+  });
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
+  if (!canEdit) { return; }
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
     orgSlug,

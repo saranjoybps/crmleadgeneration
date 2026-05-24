@@ -24,7 +24,7 @@ import {
   useSortable
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Trash2, Ticket, Plus, User, Calendar, AlertCircle } from "lucide-react";
+import { Edit, Trash2, Ticket, Plus, User, Calendar, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -48,8 +48,12 @@ interface KanbanBoardProps {
   initialTasks: Task[];
   orgSlug: string;
   canManage: boolean;
+  canDelete: boolean;
   ticketTitleById: Map<string, string>;
   onStatusChange: (taskId: string, newStatus: string) => Promise<void>;
+  onEdit?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
+  onCreate?: () => void;
 }
 
 const KANBAN_STATUSES = ["open", "in_progress", "review", "hold", "closed"] as const;
@@ -58,8 +62,12 @@ export const KanbanBoard = memo(function KanbanBoard({
   initialTasks, 
   orgSlug, 
   canManage, 
-  ticketTitleById, 
+  canDelete, 
+  ticketTitleById,
   onStatusChange,
+  onEdit,
+  onDelete: onDeleteProp,
+  onCreate,
 }: KanbanBoardProps) {
   const [tasks, setTasks] = useState(initialTasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -185,7 +193,7 @@ export const KanbanBoard = memo(function KanbanBoard({
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex-1 overflow-x-auto pb-6">
+      <div className="flex-1 overflow-x-auto pb-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="flex gap-6 h-full min-w-[1200px]">
           {KANBAN_STATUSES.map(status => (
             <Column 
@@ -194,7 +202,11 @@ export const KanbanBoard = memo(function KanbanBoard({
               tasks={tasksByStatus[status]} 
               orgSlug={orgSlug} 
               canManage={canManage}
+              canDelete={canDelete}
               ticketTitleById={ticketTitleById}
+              onEdit={onEdit}
+              onDelete={onDeleteProp}
+              onCreate={onCreate}
             />
           ))}
         </div>
@@ -206,7 +218,10 @@ export const KanbanBoard = memo(function KanbanBoard({
             task={activeTask} 
             orgSlug={orgSlug} 
             canManage={canManage} 
+            canDelete={canDelete}
             ticketTitleById={ticketTitleById}
+            onEdit={onEdit}
+            onDelete={onDeleteProp}
             isOverlay
           />
         ) : null}
@@ -215,12 +230,16 @@ export const KanbanBoard = memo(function KanbanBoard({
   );
 });
 
-const Column = memo(function Column({ status, tasks, orgSlug, canManage, ticketTitleById }: { 
+const Column = memo(function Column({ status, tasks, orgSlug, canManage, canDelete, ticketTitleById, onEdit, onDelete, onCreate }: { 
   status: string; 
   tasks: Task[]; 
   orgSlug: string; 
   canManage: boolean;
+  canDelete: boolean;
   ticketTitleById: Map<string, string>;
+  onEdit?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
+  onCreate?: () => void;
 }) {
   const { setNodeRef } = useSortable({
     id: status,
@@ -242,14 +261,12 @@ const Column = memo(function Column({ status, tasks, orgSlug, canManage, ticketT
             {tasks.length}
           </span>
         </div>
-        {canManage && (
-          <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create`}>
-            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg"><Plus className="h-4 w-4" /></Button>
-          </Link>
+        {canManage && onCreate && (
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={onCreate}><Plus className="h-4 w-4" /></Button>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1 min-h-[150px]">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-1 min-h-[150px] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
             <TaskCard 
@@ -257,7 +274,10 @@ const Column = memo(function Column({ status, tasks, orgSlug, canManage, ticketT
               task={task} 
               orgSlug={orgSlug} 
               canManage={canManage} 
+              canDelete={canDelete}
               ticketTitleById={ticketTitleById}
+              onEdit={onEdit}
+              onDelete={onDelete}
             />
           ))}
         </SortableContext>
@@ -271,12 +291,15 @@ const Column = memo(function Column({ status, tasks, orgSlug, canManage, ticketT
   );
 });
 
-const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, ticketTitleById, isOverlay }: { 
+const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, canDelete, ticketTitleById, isOverlay, onEdit, onDelete }: { 
   task: Task; 
   orgSlug: string; 
   canManage: boolean; 
+  canDelete: boolean;
   ticketTitleById: Map<string, string>;
   isOverlay?: boolean;
+  onEdit?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
 }) {
   const {
     setNodeRef,
@@ -340,20 +363,25 @@ const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, ticketTitleB
       </div>
 
       <div className="flex items-start justify-between gap-2">
-        <Link 
-          href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`} 
-          className="text-sm font-bold text-main hover:text-violet-600 leading-tight pr-6"
+        <button
+          onClick={() => onEdit?.(task.id)}
+          className="text-left text-sm font-bold text-main hover:text-violet-600 leading-tight pr-6"
           onPointerDown={(e) => e.stopPropagation()}
         >
           {task.title}
-        </Link>
-        <Link 
-          href={`/o/${orgSlug}/dashboard/tasks?modal=delete&task_id=${task.id}`} 
-          className="opacity-0 transition-opacity group-hover:opacity-100"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <Trash2 className="h-3.5 w-3.5 text-muted hover:text-red-500" />
-        </Link>
+        </button>
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+          {canManage && onEdit && (
+            <button onClick={() => onEdit(task.id)} className="p-1 text-muted hover:text-violet-600 transition-colors">
+              <Edit className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {canDelete && onDelete && (
+            <button onClick={() => onDelete(task.id)} className="p-1 text-muted hover:text-red-500 transition-colors">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       
       {task.description && (

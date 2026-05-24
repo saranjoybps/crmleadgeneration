@@ -29,6 +29,10 @@ export default async function TicketsPage({ params, searchParams }: TicketsPageP
     ),
   ]);
 
+  if (!ticketsPermissions.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view tickets.</p>;
+  }
+
   if (ticketsRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{ticketsRes.error}</div>;
 
   const projects = projectsRes.data ?? [];

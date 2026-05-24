@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { format } from "date-fns";
 import { Plus, Trash2, Users, Calendar, Info, Ticket, Filter, X, Link2, Unlink } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -76,6 +77,7 @@ export function TasksContent({
   const selectedTicketId = query.project_id ?? selectedTask?.ticket_id ?? "";
   const selectedParentId = modal?.type === "create" ? (modal.task_id ?? "") : "";
   const canManage = tasksPerm.can_edit;
+  const canDelete = tasksPerm.can_delete;
 
   const onStatusChange = useCallback(async (taskId: string, newStatus: string) => {
     await updateTaskStatus(orgSlug, taskId, newStatus);
@@ -167,8 +169,12 @@ export function TasksContent({
         initialTasks={tasks} 
         orgSlug={orgSlug} 
         canManage={canManage}
+        canDelete={canDelete}
         ticketTitleById={ticketTitleById}
         onStatusChange={onStatusChange}
+        onEdit={(taskId) => setModal({ type: "edit", task_id: taskId })}
+        onDelete={(taskId) => setModal({ type: "delete", task_id: taskId })}
+        onCreate={() => setModal({ type: "create" })}
       />
 
       {/* CREATE MODAL */}
@@ -421,7 +427,7 @@ export function TasksContent({
                     </div>
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3.5 w-3.5 text-violet-400" />
-                      <p className="text-[11px] font-medium text-main">Created {new Date(selectedTask.created_at).toLocaleDateString()}</p>
+                      <p className="text-[11px] font-medium text-main">Created {format(new Date(selectedTask.created_at), "MMM d, yyyy")}</p>
                     </div>
                   </div>
                 </div>

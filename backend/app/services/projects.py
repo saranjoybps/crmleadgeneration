@@ -172,6 +172,17 @@ class ProjectService:
         return (row.data or [None])[0]
 
     @classmethod
+    def list_all_members(cls, supabase: Client, ctx: RequestContext):
+        rows = (
+            supabase.table("project_members")
+            .select("project_id,user_id,users(email,full_name)")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        return rows.data or []
+
+    @classmethod
     def list_project_members(cls, supabase: Client, project_id: str, ctx: RequestContext):
         allowed_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
         if allowed_ids is not None and project_id not in allowed_ids:

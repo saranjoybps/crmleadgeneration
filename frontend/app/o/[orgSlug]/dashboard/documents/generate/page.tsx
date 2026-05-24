@@ -30,6 +30,21 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
   const { orgSlug } = use(params);
   const router = useRouter();
 
+  const [permLoaded, setPermLoaded] = useState(false);
+  const [permDenied, setPermDenied] = useState(false);
+
+  useEffect(() => {
+    apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean } }> }>(
+      "/api/v1/auth/permissions", { orgSlug }
+    ).then((res) => {
+      const docPerm = res.data?.modules.find((m) => m.key === "documents")?.permissions;
+      if (!docPerm?.can_view || !docPerm?.can_create) {
+        setPermDenied(true);
+      }
+      setPermLoaded(true);
+    });
+  }, [orgSlug]);
+
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
   const [employees, setEmployees] = useState<User[]>([]);
@@ -156,6 +171,14 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
   };
 
   const baseUrl = `/o/${orgSlug}/dashboard/documents`;
+
+  if (!permLoaded) {
+    return <div className="flex items-center justify-center h-64 text-muted"><p>Loading...</p></div>;
+  }
+
+  if (permDenied) {
+    return <div className="flex items-center justify-center h-64 text-muted"><p>You do not have permission to generate documents.</p></div>;
+  }
 
   return (
     <div className="space-y-6">

@@ -19,6 +19,14 @@ async function saveSettingsAction(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/payroll/settings`;
 
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions.can_edit ?? false;
+  if (!canEdit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to save settings.")}`);
+  }
+
   const body: Record<string, unknown> = {
     pay_period_type: formData.get("pay_period_type"),
     pay_day: Number(formData.get("pay_day")),

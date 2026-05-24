@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { login } from "@/app/actions/auth";
+import PasswordInput from "@/components/PasswordInput";
 
 type LoginPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -216,21 +217,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-slate-400">
                 Password
               </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-slate-400">
-                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="3" y="9" width="14" height="9" rx="2" />
-                    <path d="M7 9V6a3 3 0 016 0v3" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-300 transition-all focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-                />
-              </div>
+              <PasswordInput name="password" required placeholder="••••••••" />
             </div>
 
             {/* Forgot password */}

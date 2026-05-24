@@ -9,6 +9,13 @@ from app.services.projects import ProjectService
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+@router.get("/all-members")
+def list_all_members(ctx: RequestContext = Depends(require_module_permission("projects", "view"))):
+    supabase = get_supabase_client(access_token=ctx.access_token)
+    members = ProjectService.list_all_members(supabase, ctx)
+    return response(members)
+
+
 @router.get("")
 def list_projects(
     department_id: str | None = Query(default=None),

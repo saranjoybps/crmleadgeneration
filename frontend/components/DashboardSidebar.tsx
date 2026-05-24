@@ -154,7 +154,10 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-20 items-center justify-between px-6">
-          <h2 className="text-2xl font-bold tracking-tighter text-white">JOY CRM</h2>
+          <div className="flex flex-col">
+            <h2 className="text-2xl font-bold tracking-tighter text-white">JOY CRM</h2>
+            <p className="-mt-0.5 text-[10px] font-medium tracking-wider text-indigo-400/60">v1.0.0</p>
+          </div>
           <button 
             onClick={() => setIsOpen(false)}
             className="rounded-lg p-2 text-indigo-300 hover:bg-indigo-800 md:hidden"
@@ -204,6 +207,7 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
               <p className="truncate text-sm font-semibold text-white">{organizationName}</p>
             </div>
           )}
+
           
           <div className="rounded-2xl bg-indigo-900/50 p-4">
             <div className="flex items-center gap-3">

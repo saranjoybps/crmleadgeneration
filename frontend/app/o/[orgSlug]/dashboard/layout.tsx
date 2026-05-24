@@ -1,11 +1,14 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
-import { LifeBuoy, Bell, MessageSquare } from "lucide-react";
+import { Bell, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import SearchBar from "@/components/SearchBar";
+import FullscreenToggle from "@/components/FullscreenToggle";
+import HelpButton from "@/components/HelpButton";
 import { PermissionsProvider } from "@/lib/permissions";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
@@ -84,10 +87,10 @@ export default async function DashboardLayout({ children, params }: DashboardLay
             <header className="surface-panel border-b border-soft px-5 py-4 md:px-7">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="mt-1 text-lg font-semibold uppercase text-main">{org.organization_name}</p>
+                  <SearchBar orgSlug={org.organization_slug} />
                 </div>
                  <div className="flex items-center gap-2">
-                   <Link
+                    <Link
                      href={`/o/${org.organization_slug}/dashboard/chat`}
                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
                      aria-label="Chat"
@@ -95,15 +98,9 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                    >
                      <MessageSquare className="h-5 w-5" />
                    </Link>
-                   <button
-                     type="button"
-                     className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-                     aria-label="Help"
-                     title="Help"
-                   >
-                     <LifeBuoy className="h-5 w-5" />
-                   </button>
-                   <button
+                    <HelpButton orgSlug={org.organization_slug} />
+                    <FullscreenToggle />
+                    <button
                      type="button"
                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-soft bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
                      aria-label="Notifications"

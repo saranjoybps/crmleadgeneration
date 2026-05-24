@@ -45,9 +45,10 @@ interface RBACData {
 
 interface RBACManagerProps {
   orgSlug: string;
+  hidePermissions?: boolean;
 }
 
-export function RBACManager({ orgSlug }: RBACManagerProps) {
+export function RBACManager({ orgSlug, hidePermissions }: RBACManagerProps) {
   const [data, setData] = useState<RBACData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -373,6 +374,8 @@ export function RBACManager({ orgSlug }: RBACManagerProps) {
         </div>
       </Card>
 
+      {!hidePermissions && (
+        <>
       {/* Permissions Matrix */}
       <Card className="p-6">
         <div className="mb-6">
@@ -439,6 +442,8 @@ export function RBACManager({ orgSlug }: RBACManagerProps) {
           </table>
         </div>
       </Card>
+        </>
+      )}
 
       {/* Create Role Modal */}
       <Modal
