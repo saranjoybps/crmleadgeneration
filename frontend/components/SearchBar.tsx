@@ -25,6 +25,7 @@ const MODULES = [
   { label: "Payroll", href: "/dashboard/payroll", keywords: ["payroll", "pay", "salary"] },
   { label: "Vault", href: "/dashboard/vault", keywords: ["vault", "passwords", "secrets"] },
   { label: "Documents", href: "/dashboard/documents", keywords: ["documents", "docs", "files"] },
+  { label: "AI Studio", href: "/dashboard/ai-studio", keywords: ["ai", "studio", "content", "blog", "poster", "social", "email", "creation"] },
   { label: "Users", href: "/dashboard/users", keywords: ["users", "team", "members"] },
   { label: "Settings", href: "/dashboard/settings", keywords: ["settings", "preferences"] },
 ];

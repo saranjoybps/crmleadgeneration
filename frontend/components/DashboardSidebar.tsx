@@ -24,6 +24,7 @@ import {
   BarChart3,
   FileSpreadsheet,
   Receipt,
+  Wand2,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -90,6 +91,7 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
     links: [
       { href: "/dashboard/vault", moduleKey: "vault", label: "Vault", icon: LockKeyhole, roles: ["owner", "admin", "member", "client"] },
       { href: "/dashboard/documents", moduleKey: "documents", label: "Documents", icon: FileText, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/ai-studio", moduleKey: "ai-studio", label: "AI Studio", icon: Wand2, roles: ["owner", "admin", "member"] },
     ],
   },
   {
