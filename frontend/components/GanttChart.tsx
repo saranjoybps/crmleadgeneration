@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useMemo, memo } from 'react';
-import { Gantt, Task, ViewMode } from 'gantt-task-react';
-import "gantt-task-react/dist/index.css";
+import { Gantt, Task, ViewMode } from '@wamra/gantt-task-react';
+import type { TaskOrEmpty } from '@wamra/gantt-task-react';
+import "@wamra/gantt-task-react/dist/style.css";
 
 interface GanttChartProps {
   tasks: any[];
   milestones?: any[];
   tickets?: any[];
-  onTaskChange?: (task: Task) => void;
+  onTaskChange?: (task: TaskOrEmpty) => void;
 }
 
 export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets, onTaskChange }: GanttChartProps) {
@@ -26,12 +27,12 @@ export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets,
           progress: m.status === 'completed' ? 100 : 0,
           isDisabled: true,
           styles: {
-            progressColor: '#f59e0b',
-            progressSelectedColor: '#d97706',
-            backgroundColor: '#fef3c7',
-            backgroundSelectedColor: '#fde68a',
+            barProgressColor: '#f59e0b',
+            barProgressSelectedColor: '#d97706',
+            barBackgroundColor: '#fef3c7',
+            barBackgroundSelectedColor: '#fde68a',
           },
-          project: m.project_id,
+          parent: m.project_id,
         });
 
         const linkedTickets = tickets?.filter(t => t.milestone_id === m.id) || [];
@@ -45,12 +46,12 @@ export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets,
             progress: t.status === 'closed' ? 100 : t.status === 'review' ? 80 : t.status === 'in_progress' ? 50 : 0,
             isDisabled: true,
             styles: {
-              progressColor: '#10b981',
-              progressSelectedColor: '#059669',
-              backgroundColor: '#d1fae5',
-              backgroundSelectedColor: '#a7f3d0',
+            barProgressColor: '#10b981',
+                barProgressSelectedColor: '#059669',
+                barBackgroundColor: '#d1fae5',
+                barBackgroundSelectedColor: '#a7f3d0',
             },
-            project: t.project_id,
+            parent: t.project_id,
           });
 
           const linkedTasks = tasks?.filter(tsk => tsk.ticket_id === t.id) || [];
@@ -64,12 +65,12 @@ export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets,
               progress: tsk.status === 'closed' ? 100 : tsk.status === 'review' ? 80 : tsk.status === 'in_progress' ? 50 : 0,
               isDisabled: false,
               styles: {
-                progressColor: '#7c3aed',
-                progressSelectedColor: '#6d28d9',
-                backgroundColor: '#ddd6fe',
-                backgroundSelectedColor: '#c4b5fd',
+                barProgressColor: '#7c3aed',
+                barProgressSelectedColor: '#6d28d9',
+                barBackgroundColor: '#ddd6fe',
+                barBackgroundSelectedColor: '#c4b5fd',
               },
-              project: tsk.project_id,
+              parent: tsk.project_id,
               dependencies: tsk.dependencies?.map((d: any) => d.depends_on_task_id) || [],
             });
           });
@@ -87,12 +88,12 @@ export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets,
             progress: t.status === 'closed' ? 100 : t.status === 'review' ? 80 : t.status === 'in_progress' ? 50 : 0,
             isDisabled: false,
             styles: {
-              progressColor: '#7c3aed',
-              progressSelectedColor: '#6d28d9',
-              backgroundColor: '#ddd6fe',
-              backgroundSelectedColor: '#c4b5fd',
+            barProgressColor: '#7c3aed',
+                barProgressSelectedColor: '#6d28d9',
+                barBackgroundColor: '#ddd6fe',
+                barBackgroundSelectedColor: '#c4b5fd',
             },
-            project: t.project_id,
+            parent: t.project_id,
             dependencies: t.dependencies?.map((d: any) => d.depends_on_task_id) || [],
           });
         });
@@ -116,10 +117,8 @@ export const GanttChart = memo(function GanttChart({ tasks, milestones, tickets,
         tasks={ganttTasks}
         viewMode={ViewMode.Day}
         onDateChange={onTaskChange}
-        listCellWidth="200px"
-        columnWidth={60}
         fontSize="12px"
-        barCornerRadius={8}
+        distances={{ tableWidth: 200, columnWidth: 60, barCornerRadius: 8 }}
       />
     </div>
   );
