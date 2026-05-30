@@ -44,6 +44,7 @@ export default async function TemplatesPage({ params, searchParams }: TemplatesP
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;
   const canView = docPerm?.can_view ?? false;
   const canCreate = docPerm?.can_create ?? false;
+  const canEdit = docPerm?.can_edit ?? false;
   const canDelete = docPerm?.can_delete ?? false;
 
   if (!canView) {
@@ -60,6 +61,7 @@ export default async function TemplatesPage({ params, searchParams }: TemplatesP
       templates={templates}
       docTypes={docTypes}
       canCreate={canCreate}
+      canEdit={canEdit}
       canDelete={canDelete}
       baseUrl={baseUrl}
       search={query.search ?? ""}

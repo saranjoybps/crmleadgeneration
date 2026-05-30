@@ -51,7 +51,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 <rect x="10" y="10" width="7" height="7" rx="2" fill="#a78bfa" />
               </svg>
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">JOY CRM</span>
+            <span className="text-xl font-bold tracking-tight text-white">JOY ERP</span>
           </div>
         </div>
 
@@ -152,7 +152,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         {/* Bottom tagline */}
         <div className="relative z-10 px-10 pb-8 text-xs text-white/30">
-          © {new Date().getFullYear()} JOY CRM · All rights reserved
+          © {new Date().getFullYear()} JOY ERP · All rights reserved
         </div>
       </div>
 
@@ -168,7 +168,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <rect x="10" y="10" width="7" height="7" rx="2" fill="#a78bfa" />
             </svg>
           </div>
-          <span className="text-lg font-bold tracking-tight text-[#1e1040]">JOY CRM</span>
+          <span className="text-lg font-bold tracking-tight text-[#1e1040]">JOY ERP</span>
         </div>
 
         <div className="w-full max-w-[380px]">
@@ -270,7 +270,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         {/* Bottom note */}
         <p className="mt-12 text-center text-xs text-slate-400 lg:hidden">
-          © {new Date().getFullYear()} JOY CRM
+          © {new Date().getFullYear()} JOY ERP
         </p>
       </div>
     </main>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Info, Users, IndianRupee, Layers, Trash2 } from "lucide-react";
+import { Plus, Info, Users, IndianRupee, Layers, Trash2, Edit } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { apiRequest } from "@/lib/api-client";
 import type { EmployeeSalary, SalaryComponent } from "@/lib/types";
-import { createSalaryAction, deleteSalaryAction, createComponentAction, deleteComponentAction } from "./actions";
+import { createSalaryAction, deleteSalaryAction, createComponentAction, deleteComponentAction, updateSalaryAction } from "./actions";
 
-type ModalState = { type: "create" } | { type: "components" } | null;
+type ModalState = { type: "create" } | { type: "edit"; salary: EmployeeSalary } | { type: "components" } | null;
 
 type EmployeesContentProps = {
   orgSlug: string;
@@ -145,15 +145,24 @@ export default function EmployeesContent({ orgSlug, salaries, components, query,
                   </td>
                   {(payrollPerm.can_delete || payrollPerm.can_edit) && (
                     <td className="px-4 py-3 text-right">
-                      {payrollPerm.can_delete && (
-                        <form action={deleteSalaryAction} className="inline">
-                          <input type="hidden" name="organization_slug" value={orgSlug} />
-                          <input type="hidden" name="salary_id" value={sal.id} />
-                          <Button type="submit" variant="ghost" size="sm" className="text-red-500 hover:text-red-700">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </form>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {payrollPerm.can_edit && (
+                          <button onClick={() => setModal({ type: "edit", salary: sal })}>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </button>
+                        )}
+                        {payrollPerm.can_delete && (
+                          <form action={deleteSalaryAction} className="inline">
+                            <input type="hidden" name="organization_slug" value={orgSlug} />
+                            <input type="hidden" name="salary_id" value={sal.id} />
+                            <Button type="submit" variant="ghost" size="sm" className="text-red-500 hover:text-red-700">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </form>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -369,6 +378,62 @@ export default function EmployeesContent({ orgSlug, salaries, components, query,
               ))}
             </div>
           </div>
+        </Modal>
+      )}
+
+      {modal?.type === "edit" && payrollPerm.can_edit && (
+        <Modal isOpen={true} onClose={() => setModal(null)} title="Edit Employee Salary">
+          <form action={updateSalaryAction} className="space-y-4">
+            <input type="hidden" name="organization_slug" value={orgSlug} />
+            <input type="hidden" name="salary_id" value={modal.salary.id} />
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-main">Employee</label>
+              <p className="text-sm text-main font-medium px-1">
+                {modal.salary.user?.full_name || modal.salary.user?.email || "Unknown"}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-main">Effective From</label>
+              <input
+                type="date"
+                name="effective_from"
+                defaultValue={modal.salary.effective_from}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-main focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-main">Monthly CTC (₹)</label>
+              <input
+                type="number"
+                name="monthly_ctc"
+                defaultValue={Number(modal.salary.monthly_ctc)}
+                step="0.01"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-main focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-main">Status</label>
+              <select
+                name="status"
+                defaultValue={modal.salary.status}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-main focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button onClick={() => setModal(null)}>
+                <Button type="button" variant="outline">Cancel</Button>
+              </button>
+              <Button type="submit">Update Salary</Button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

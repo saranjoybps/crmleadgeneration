@@ -154,6 +154,8 @@ class TaskCreate(BaseModel):
     due_date: str | None = None
     parent_task_id: str | None = None
     assignee_user_ids: list[str] | None = None
+    ticket_id: str | None = None
+    project_id: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -163,6 +165,7 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     start_date: str | None = None
     due_date: str | None = None
+    ticket_id: str | None = None
 
 
 class TaskDependencyCreate(BaseModel):

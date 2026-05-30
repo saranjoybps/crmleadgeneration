@@ -116,7 +116,7 @@ export type Task = {
   id: string;
   tenant_id: string;
   project_id: string;
-  ticket_id: string;
+  ticket_id?: string;
   title: string;
   description: string | null;
   priority: "low" | "medium" | "high" | "urgent";

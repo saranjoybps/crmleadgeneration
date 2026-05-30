@@ -76,7 +76,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
       <main className="h-screen overflow-hidden">
         <div className="flex h-full flex-col overflow-hidden surface-panel md:flex-row">
           <DashboardSidebar
-            email={user.email ?? "unknown@joycrm.app"}
+            email={user.email ?? "unknown@joyerp.app"}
             basePath={`/o/${org.organization_slug}`}
             organizationName={org.organization_name}
             role={org.role}
@@ -109,7 +109,7 @@ export default async function DashboardLayout({ children, params }: DashboardLay
                      <Bell className="h-5 w-5" />
                    </button>
                   <ProfileMenu
-                    email={user.email ?? "unknown@joycrm.app"}
+                    email={user.email ?? "unknown@joyerp.app"}
                     role={org.role}
                     initial={profileInitial}
                     avatarUrl={avatarUrl}

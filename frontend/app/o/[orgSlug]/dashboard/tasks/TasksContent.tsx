@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -24,7 +24,7 @@ type TaskRow = {
   priority: "low" | "medium" | "high" | "urgent";
   start_date?: string;
   due_date?: string;
-  ticket_id: string; 
+  ticket_id?: string; 
   project_id: string;
   parent_task_id?: string;
   subtasks?: Array<{ id: string; title: string; status: string }>;
@@ -58,7 +58,7 @@ export function TasksContent({
   tasksPerm,
 }: {
   orgSlug: string;
-  query: { error?: string; success?: string; project_id?: string; user_id?: string; department_id?: string };
+  query: { error?: string; success?: string; modal?: "create" | "edit" | "delete"; project_id?: string; user_id?: string; department_id?: string; ticket_id?: string; task_id?: string };
   tickets: TicketRow[];
   projects: ProjectRow[];
   tasks: TaskRow[];
@@ -69,12 +69,34 @@ export function TasksContent({
   const router = useRouter();
   const [modal, setModal] = useState<ModalState>(null);
 
+  useEffect(() => {
+    if (query.modal === "create") {
+      setModal({ type: "create", ticket_id: query.ticket_id });
+    } else if (query.modal === "edit" && query.task_id) {
+      setModal({ type: "edit", task_id: query.task_id });
+    } else if (query.modal === "delete" && query.task_id) {
+      setModal({ type: "delete", task_id: query.task_id });
+    }
+  }, [query.modal, query.task_id, query.ticket_id]);
+
   const selectedTask = useMemo(
     () => tasks.find((t) => t.id === (modal?.type === "edit" || modal?.type === "delete" ? modal.task_id : null)),
     [modal, tasks]
   );
 
-  const selectedTicketId = query.project_id ?? selectedTask?.ticket_id ?? "";
+  const [createTicketId, setCreateTicketId] = useState("");
+
+  useEffect(() => {
+    if (modal?.type === "create") {
+      setCreateTicketId(modal.ticket_id ?? query.ticket_id ?? "");
+    }
+  }, [modal, query.ticket_id]);
+
+  const selectedTicketId = useMemo(() => {
+    if (modal?.type === "create") return createTicketId;
+    if (modal?.type === "edit" || modal?.type === "delete") return selectedTask?.ticket_id ?? "";
+    return "";
+  }, [modal, createTicketId, selectedTask]);
   const selectedParentId = modal?.type === "create" ? (modal.task_id ?? "") : "";
   const canManage = tasksPerm.can_edit;
   const canDelete = tasksPerm.can_delete;
@@ -209,12 +231,22 @@ export function TasksContent({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-bold uppercase tracking-wider text-muted">Link to Ticket</label>
-            <select name="ticket_id" required defaultValue={selectedTicketId} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
-              <option value="">Select a ticket...</option>
+            <label className="text-sm font-bold uppercase tracking-wider text-muted">Link to Ticket (optional)</label>
+            <select name="ticket_id" value={createTicketId} onChange={e => setCreateTicketId(e.target.value)} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+              <option value="">None (standalone task)</option>
               {tickets.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
             </select>
           </div>
+
+          {!createTicketId && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted">Project <span className="text-red-500">*</span></label>
+              <select name="project_id" required={!createTicketId} className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500">
+                <option value="">Select a project...</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
           
           <Input label="Task Title" name="title" required placeholder="What needs to be done?" />
           
@@ -371,7 +403,7 @@ export function TasksContent({
               <div className="space-y-4 pt-6 border-t border-soft">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-main">Sub-tasks</h4>
-                  <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600" onClick={() => setModal({ type: "create", task_id: selectedTask.id, ticket_id: selectedTask.ticket_id })}>
+                  <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600" onClick={() => setModal({ type: "create", task_id: selectedTask.id, ticket_id: selectedTask.ticket_id ?? undefined })}>
                     <Plus className="h-3 w-3" /> Add Sub-task
                   </Button>
                 </div>
@@ -423,7 +455,7 @@ export function TasksContent({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Ticket className="h-3.5 w-3.5 text-violet-400" />
-                      <p className="text-[11px] font-medium text-main truncate">{ticketTitleById.get(selectedTask.ticket_id) || "N/A"}</p>
+                      <p className="text-[11px] font-medium text-main truncate">{selectedTask.ticket_id ? (ticketTitleById.get(selectedTask.ticket_id) || "Unknown Ticket") : "No ticket"}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3.5 w-3.5 text-violet-400" />

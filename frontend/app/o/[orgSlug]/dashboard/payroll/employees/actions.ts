@@ -68,6 +68,36 @@ export async function deleteSalaryAction(formData: FormData) {
   redirect(`${path}?success=${encodeURIComponent("Employee salary deleted.")}`);
 }
 
+export async function updateSalaryAction(formData: FormData) {
+  const orgSlug = String(formData.get("organization_slug") ?? "").trim();
+  const salaryId = String(formData.get("salary_id") ?? "").trim();
+  const path = `/o/${orgSlug}/dashboard/payroll/employees`;
+
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions.can_edit ?? false;
+  if (!canEdit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to update salary records.")}`);
+  }
+
+  const body: Record<string, unknown> = {};
+  const effective_from = formData.get("effective_from");
+  if (effective_from) body.effective_from = effective_from;
+  const monthly_ctc = formData.get("monthly_ctc");
+  if (monthly_ctc) body.monthly_ctc = Number(monthly_ctc);
+  const status = formData.get("status");
+  if (status) body.status = status;
+
+  const { error } = await apiRequest(`/api/v1/payroll/employees/${encodeURIComponent(salaryId)}`, {
+    method: "PATCH", orgSlug, body,
+  });
+
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
+  revalidatePath(path);
+  redirect(`${path}?success=${encodeURIComponent("Salary record updated.")}`);
+}
+
 export async function createComponentAction(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/payroll/employees`;

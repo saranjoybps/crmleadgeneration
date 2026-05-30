@@ -24,7 +24,7 @@ type TaskRow = {
   priority: "low" | "medium" | "high" | "urgent";
   start_date?: string;
   due_date?: string;
-  ticket_id: string; 
+  ticket_id?: string; 
   project_id: string;
   parent_task_id?: string;
   subtasks?: Array<{ id: string; title: string; status: string }>;
@@ -60,6 +60,7 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   if (query.project_id) taskQueryParams.append("project_id", query.project_id);
   if (query.user_id) taskQueryParams.append("user_id", query.user_id);
   if (query.department_id) taskQueryParams.append("department_id", query.department_id);
+  if (query.ticket_id) taskQueryParams.append("ticket_id", query.ticket_id);
 
   const [ticketsRes, projectsRes, tasksRes, usersRes] = await Promise.all([
     apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
@@ -82,9 +83,12 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
       query={{
         error: query.error,
         success: query.success,
+        modal: query.modal,
         project_id: query.project_id,
         user_id: query.user_id,
         department_id: query.department_id,
+        ticket_id: query.ticket_id,
+        task_id: query.task_id,
       }}
       tickets={tickets}
       projects={projects}

@@ -1,4 +1,4 @@
-# Joy CRM — Multi-Tenant Workspace Platform
+# Joy ERP — Multi-Tenant Workspace Platform
 
 **Version:** 1.0.0 (Frontend) / 2.0.0 (API)
 

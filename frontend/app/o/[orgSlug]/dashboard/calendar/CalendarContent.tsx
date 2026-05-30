@@ -11,19 +11,20 @@ import {
   AlertCircle,
   Clock,
   ListTodo,
+  Flag,
 } from "lucide-react";
 import Link from "next/link";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Task, Ticket as TicketType } from "@/lib/types";
+import { Task, Ticket as TicketType, Milestone } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CalendarItem = {
   id: string;
   title: string;
-  type: "ticket" | "task";
+  type: "ticket" | "task" | "milestone";
   status: string;
   priority: string;
   due_date: string;
@@ -33,10 +34,12 @@ export default function CalendarContent({
   orgSlug,
   tasks,
   tickets,
+  milestones,
 }: {
   orgSlug: string;
   tasks: Task[];
   tickets: TicketType[];
+  milestones: Milestone[];
 }) {
   const now = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(now.getMonth());
@@ -46,6 +49,10 @@ export default function CalendarContent({
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
   const monthName = new Date(currentYear, currentMonth).toLocaleString("default", { month: "long" });
+
+  const isOverdue = (dueDate: string) => dueDate.split("T")[0] < todayStr;
+  const isClosedItem = (item: CalendarItem) =>
+    item.type === "milestone" ? item.status === "completed" : item.status === "closed";
 
   const allItems = useMemo(() => {
     const items: CalendarItem[] = [
@@ -65,9 +72,17 @@ export default function CalendarContent({
         priority: t.priority,
         due_date: t.due_date ?? "",
       })),
+      ...milestones.map((m) => ({
+        id: m.id,
+        title: m.name,
+        type: "milestone" as const,
+        status: m.status,
+        priority: "medium",
+        due_date: m.due_date ?? "",
+      })),
     ];
     return items.filter((i) => i.due_date);
-  }, [tickets, tasks]);
+  }, [tickets, tasks, milestones]);
 
   const getItemsForDay = (day: number) => {
     const targetDate = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -75,28 +90,29 @@ export default function CalendarContent({
   };
 
   const overdueItems = useMemo(
-    () => allItems.filter((i) => i.due_date.split("T")[0] < todayStr && i.status !== "closed"),
+    () => allItems.filter((i) => i.due_date.split("T")[0] < todayStr && !isClosedItem(i)),
     [allItems, todayStr]
   );
   const todayItems = useMemo(
-    () => allItems.filter((i) => i.due_date.split("T")[0] === todayStr),
+    () => allItems.filter((i) => i.due_date.split("T")[0] === todayStr && !isClosedItem(i)),
     [allItems, todayStr]
   );
   const thisMonthItems = useMemo(
     () => allItems.filter((i) => {
+      if (isClosedItem(i)) return false;
       const d = i.due_date.split("T")[0];
       return d >= todayStr && d.startsWith(`${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`);
     }),
     [allItems, todayStr, currentYear, currentMonth]
   );
   const completedCount = useMemo(
-    () => allItems.filter((i) => i.status === "closed").length,
+    () => allItems.filter((i) => i.type === "milestone" ? i.status === "completed" : i.status === "closed").length,
     [allItems]
   );
 
   const upcomingDeadlines = useMemo(
     () => [...allItems]
-      .filter((i) => i.due_date.split("T")[0] >= todayStr)
+      .filter((i) => i.due_date.split("T")[0] >= todayStr && !isClosedItem(i))
       .sort((a, b) => a.due_date.localeCompare(b.due_date))
       .slice(0, 8),
     [allItems, todayStr]
@@ -116,11 +132,9 @@ export default function CalendarContent({
     setCurrentYear(d.getFullYear());
   };
 
-  const isOverdue = (dueDate: string) => dueDate.split("T")[0] < todayStr;
-  const isClosedItem = (status: string) => status === "closed";
-
   const getItemLink = (item: CalendarItem) => {
     const base = `/o/${orgSlug}/dashboard`;
+    if (item.type === "milestone") return `${base}/roadmap`;
     const modal = item.type === "ticket" ? "edit&ticket_id" : "edit&task_id";
     return `${base}/${item.type}s?modal=${modal}=${item.id}`;
   };
@@ -206,7 +220,7 @@ export default function CalendarContent({
             const items = getItemsForDay(day);
             const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             const isToday = dateStr === todayStr;
-            const hasOverdue = items.some((it) => isOverdue(it.due_date) && !isClosedItem(it.status));
+            const hasOverdue = items.some((it) => isOverdue(it.due_date) && !isClosedItem(it));
 
             return (
               <div
@@ -239,7 +253,7 @@ export default function CalendarContent({
 
                 <div className="space-y-1 overflow-y-auto max-h-[100px] pr-0.5 scrollbar-hide">
                   {items.slice(0, 4).map((item) => {
-                    const overdue = isOverdue(item.due_date) && !isClosedItem(item.status);
+                    const overdue = isOverdue(item.due_date) && !isClosedItem(item);
                     return (
                       <Link key={`${item.type}-${item.id}`} href={getItemLink(item)}>
                         <div
@@ -247,18 +261,22 @@ export default function CalendarContent({
                             "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-bold transition-all border",
                             item.type === "ticket"
                               ? "bg-amber-50 text-amber-800 border-amber-200/60 hover:bg-amber-100 hover:border-amber-300"
+                              : item.type === "milestone"
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200/60 hover:bg-emerald-100 hover:border-emerald-300"
                               : "bg-violet-50 text-violet-800 border-violet-200/60 hover:bg-violet-100 hover:border-violet-300",
                             overdue && "!bg-red-50 !text-red-800 !border-red-200"
                           )}
                         >
                           {item.type === "ticket" ? (
                             <Ticket className="h-3 w-3 shrink-0 opacity-70" />
+                          ) : item.type === "milestone" ? (
+                            <Flag className="h-3 w-3 shrink-0 opacity-70" />
                           ) : (
                             <ListTodo className="h-3 w-3 shrink-0 opacity-70" />
                           )}
                           <span className="truncate">{item.title}</span>
                           {overdue && <AlertCircle className="h-2.5 w-2.5 shrink-0 text-red-500 ml-auto" />}
-                          {isClosedItem(item.status) && <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-500 ml-auto" />}
+                          {isClosedItem(item) && <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-500 ml-auto" />}
                         </div>
                       </Link>
                     );
@@ -289,10 +307,10 @@ export default function CalendarContent({
                     <div
                       className={cn(
                         "h-9 w-9 rounded-xl flex items-center justify-center shrink-0",
-                        item.type === "ticket" ? "bg-amber-100 text-amber-700" : "bg-violet-100 text-violet-700"
+                        item.type === "ticket" ? "bg-amber-100 text-amber-700" : item.type === "milestone" ? "bg-emerald-100 text-emerald-700" : "bg-violet-100 text-violet-700"
                       )}
                     >
-                      {item.type === "ticket" ? <Ticket className="h-4 w-4" /> : <ListTodo className="h-4 w-4" />}
+                      {item.type === "ticket" ? <Ticket className="h-4 w-4" /> : item.type === "milestone" ? <Flag className="h-4 w-4" /> : <ListTodo className="h-4 w-4" />}
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-main truncate">{item.title}</p>

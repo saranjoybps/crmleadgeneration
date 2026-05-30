@@ -4,10 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import type { Asset, AssetAssignment, User } from "@/lib/types";
 import AssetsContent from "./AssetsContent";
 
-export default async function AssetsPage({ params }: {
+export default async function AssetsPage({ params, searchParams }: {
   params: Promise<{ orgSlug: string }>,
+  searchParams: Promise<{ error?: string; success?: string }>,
 }) {
   const { orgSlug } = await params;
+  const query = await searchParams;
   await getOrganizationContextOrRedirect(orgSlug);
 
   const permissionsResponse = await apiRequest<{
@@ -40,6 +42,8 @@ export default async function AssetsPage({ params }: {
       assets={assetsRes.data ?? []}
       assignments={assignmentsRes.data ?? []}
       users={usersRes.data ?? []}
+      error={query.error ?? ""}
+      success={query.success ?? ""}
     />
   );
 }

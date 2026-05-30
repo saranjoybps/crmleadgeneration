@@ -3,8 +3,8 @@ import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 
 export const metadata: Metadata = {
-  title: "JOY CRM",
-  description: "Modern Tenant-based SaaS CRM.",
+  title: "JOY ERP",
+  description: "Modern Tenant-based SaaS ERP.",
 };
 
 export default function RootLayout({

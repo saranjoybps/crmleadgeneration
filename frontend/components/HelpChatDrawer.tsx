@@ -17,7 +17,7 @@ type HelpChatDrawerProps = {
 
 export default function HelpChatDrawer({ isOpen, onClose, orgSlug }: HelpChatDrawerProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Hello! I'm your CRM assistant. How can I help you today? You can ask me about any module, feature, or how things work in the system." },
+    { role: "assistant", content: "Hello! I'm your ERP assistant. How can I help you today? You can ask me about any module, feature, or how things work in the system." },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -94,7 +94,7 @@ export default function HelpChatDrawer({ isOpen, onClose, orgSlug }: HelpChatDra
             </div>
             <div>
               <h2 className="text-base font-black text-main">Help & Support</h2>
-              <p className="text-[10px] font-medium text-muted uppercase tracking-wider">CRM Assistant</p>
+              <p className="text-[10px] font-medium text-muted uppercase tracking-wider">ERP Assistant</p>
             </div>
           </div>
           <button

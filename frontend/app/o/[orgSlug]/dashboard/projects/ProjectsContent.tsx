@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { format } from "date-fns";
 import Link from "next/link";
 import { Plus, Info, Edit, Trash2, UserPlus, X, Briefcase } from "lucide-react";
 
@@ -13,7 +14,7 @@ import { DepartmentSelector } from "@/components/DepartmentSelector";
 import { createProject, updateProject, deleteProject, addProjectMember, removeProjectMember } from "./actions";
 
 type UserOption = { user_id: string; email: string };
-type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string; department_ids?: string[] };
+type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string; department_ids?: string[]; created_at: string };
 type MemberRow = { project_id: string; user_id: string; users?: { email?: string; full_name?: string } | Array<{ email?: string; full_name?: string }> };
 type UserRow = { id: string; email: string; full_name?: string };
 type DepartmentRow = { id: string; name: string };
@@ -47,7 +48,7 @@ export function ProjectsContent({
   projectsPermissions,
 }: {
   orgSlug: string;
-  query: { error?: string; success?: string; department_id?: string };
+  query: { error?: string; success?: string; department_id?: string; modal?: "view" | "edit" | "delete" | "create"; project?: string };
   projects: ProjectRow[];
   departments: DepartmentRow[];
   users: UserRow[];
@@ -55,6 +56,18 @@ export function ProjectsContent({
   projectsPermissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
 }) {
   const [modal, setModal] = useState<ModalState>(null);
+
+  useEffect(() => {
+    if (query.modal === "create") {
+      setModal({ type: "create" });
+    } else if (query.modal === "edit" && query.project) {
+      setModal({ type: "edit", project_id: query.project });
+    } else if (query.modal === "view" && query.project) {
+      setModal({ type: "view", project_id: query.project });
+    } else if (query.modal === "delete" && query.project) {
+      setModal({ type: "delete", project_id: query.project });
+    }
+  }, [query.modal, query.project]);
 
   const userOptions: UserOption[] = useMemo(
     () => users.map((row) => ({
@@ -266,7 +279,7 @@ export function ProjectsContent({
               </div>
               <div className="space-y-1 text-right">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted">Created At</p>
-                <p className="text-sm font-medium text-main">Created</p>
+                <p className="text-sm font-medium text-main">{selectedProject.created_at ? format(new Date(selectedProject.created_at), "MMM d, yyyy") : "N/A"}</p>
               </div>
             </div>
 

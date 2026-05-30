@@ -275,12 +275,12 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
                   )}
                 </div>
               ))}
-              <div className="flex gap-2 pt-2">
-                <Button onClick={handlePreview} variant="outline" className="flex-1" disabled={!selectedTemplateId || !employeeId}>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button onClick={handlePreview} variant="outline" disabled={!selectedTemplateId || !employeeId}>
                   <Eye className="h-4 w-4 mr-1.5" />
                   Preview
                 </Button>
-                <Button onClick={handleGenerate} className="flex-1" disabled={!selectedTemplateId || !employeeId || !title || generating}>
+                <Button onClick={handleGenerate} disabled={!selectedTemplateId || !employeeId || !title || generating}>
                   <FileText className="h-4 w-4 mr-1.5" />
                   {generating ? "Generating..." : "Generate"}
                 </Button>

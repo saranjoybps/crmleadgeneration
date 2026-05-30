@@ -57,7 +57,7 @@ export default function TypesContent({
         <div className="flex items-center justify-between p-4 border-b border-soft">
           <p className="text-sm text-muted">{types.length} document types</p>
           {canCreate && (
-            <Button size="sm" onClick={() => setModal({ type: "create" })}>
+            <Button onClick={() => setModal({ type: "create" })}>
               <Plus className="h-4 w-4 mr-1.5" />
               New Type
             </Button>
@@ -113,9 +113,9 @@ export default function TypesContent({
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-violet-500"
                 placeholder="Optional description" />
             </div>
-            <div className="flex gap-3 pt-6 border-t border-soft">
-              <Button type="submit" className="flex-1 py-4">Create</Button>
-              <Button variant="outline" type="button" className="flex-1 py-4" onClick={() => setModal(null)}>Cancel</Button>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" type="button" onClick={() => setModal(null)}>Cancel</Button>
+              <Button type="submit">Create</Button>
             </div>
           </form>
         </Modal>
@@ -131,11 +131,13 @@ export default function TypesContent({
               <h4 className="text-xl font-bold text-main tracking-tight">Delete Document Type?</h4>
               <p className="mt-2 text-xs text-muted">Deactivate &quot;{selectedType.name}&quot;?</p>
             </div>
-            <form action={deleteType} className="flex flex-col gap-2 px-2">
+            <form action={deleteType}>
               <input type="hidden" name="organization_slug" value={orgSlug} />
               <input type="hidden" name="type_id" value={selectedType.id} />
-              <Button variant="danger" type="submit" className="py-3">Deactivate</Button>
-              <Button variant="outline" className="w-full py-3 border-none text-muted" onClick={() => setModal(null)}>Cancel</Button>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" type="button" onClick={() => setModal(null)}>Cancel</Button>
+                <Button variant="danger" type="submit">Deactivate</Button>
+              </div>
             </form>
           </div>
         </Modal>

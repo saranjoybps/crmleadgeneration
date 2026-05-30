@@ -8,7 +8,7 @@ type ProjectsPageProps = {
 };
 
 type UserOption = { user_id: string; email: string };
-type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string; department_ids?: string[] };
+type ProjectRow = { id: string; name: string; description?: string; status: string; department_id?: string; department_ids?: string[]; created_at: string };
 type MemberRow = { project_id: string; user_id: string; users?: { email?: string; full_name?: string } | Array<{ email?: string; full_name?: string }> };
 type UserRow = { id: string; email: string; full_name?: string };
 
@@ -49,6 +49,8 @@ export default async function ProjectsPage({ params, searchParams }: ProjectsPag
         error: query.error,
         success: query.success,
         department_id: query.department_id,
+        modal: query.modal,
+        project: query.project,
       }}
       projects={projects}
       departments={departments}

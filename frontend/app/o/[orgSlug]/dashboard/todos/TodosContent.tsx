@@ -126,7 +126,7 @@ export default function TodosContent({ orgSlug, query, todos, todosPerm, filter 
                     {todo.due_date && (
                       <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(todo.due_date), "MMM d, yyyy")}
+                        {format(new Date(todo.due_date.slice(0,10) + "T00:00:00"), "MMM d, yyyy")}
                       </div>
                     )}
                   </div>
@@ -220,7 +220,7 @@ export default function TodosContent({ orgSlug, query, todos, todosPerm, filter 
               <input 
                 type="date" 
                 name="due_date" 
-                defaultValue={selectedTodo.due_date ? new Date(selectedTodo.due_date).toISOString().split('T')[0] : ""}
+                defaultValue={selectedTodo.due_date?.slice(0,10) ?? ""}
                 className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:ring-2 focus:ring-violet-500"
               />
             </div>

@@ -32,14 +32,14 @@ export const POSTER_TEMPLATES: PosterTemplate[] = [
 export const MOCK_CONTENTS: StudioContent[] = [
   {
     id: "c1",
-    title: "Welcome to JOY CRM v2.0",
+    title: "Welcome to JOY ERP v2.0",
     type: "blog",
     status: "published",
     platforms: ["linkedin", "internal"],
     scheduledAt: "2026-05-22T09:00:00",
     publishedAt: "2026-05-22T09:00:00",
     createdAt: "2026-05-20T10:30:00",
-    body: "We are thrilled to announce the launch of JOY CRM v2.0! This major update brings a全新 AI-powered assistant, enhanced project management tools, and a redesigned interface that makes collaboration seamless.\n\nKey highlights include:\n- AI Studio for content creation\n- Advanced analytics dashboard\n- Improved kanban board\n- Real-time collaboration features\n\nStay tuned for more updates!",
+    body: "We are thrilled to announce the launch of JOY ERP v2.0! This major update brings a全新 AI-powered assistant, enhanced project management tools, and a redesigned interface that makes collaboration seamless.\n\nKey highlights include:\n- AI Studio for content creation\n- Advanced analytics dashboard\n- Improved kanban board\n- Real-time collaboration features\n\nStay tuned for more updates!",
     tags: ["announcement", "product-launch", "crm"],
   },
   {
@@ -51,8 +51,8 @@ export const MOCK_CONTENTS: StudioContent[] = [
     scheduledAt: "2026-06-01T08:00:00",
     publishedAt: null,
     createdAt: "2026-05-24T14:00:00",
-    emailSubject: "Your June Update from JOY CRM",
-    body: "Dear Team,\n\nHere's what happened this month at JOY CRM...\n\n- New AI Studio module launched\n- 3 major bug fixes\n- Performance improvements across the board\n\nBest regards,\nThe JOY Team",
+    emailSubject: "Your June Update from JOY ERP",
+    body: "Dear Team,\n\nHere's what happened this month at JOY ERP...\n\n- New AI Studio module launched\n- 3 major bug fixes\n- Performance improvements across the board\n\nBest regards,\nThe JOY Team",
     tags: ["newsletter", "monthly"],
   },
   {
@@ -67,7 +67,7 @@ export const MOCK_CONTENTS: StudioContent[] = [
     tags: ["recruitment", "hiring"],
     bgColor: "from-violet-600 to-indigo-800",
     textColor: "#ffffff",
-    posterText: "WE'RE HIRING!\nJoin the JOY CRM Team",
+    posterText: "WE'RE HIRING!\nJoin the JOY ERP Team",
   },
   {
     id: "c4",
@@ -78,7 +78,7 @@ export const MOCK_CONTENTS: StudioContent[] = [
     scheduledAt: "2026-05-23T12:00:00",
     publishedAt: "2026-05-23T12:00:00",
     createdAt: "2026-05-22T16:00:00",
-    socialText: "Did you know? You can use keyboard shortcuts in JOY CRM to navigate 3x faster!\n\nCtrl+K → Quick search\nCtrl+N → New task\nCtrl+Shift+P → New project\n\n#Productivity #CRMTips #WorkSmarter",
+    socialText: "Did you know? You can use keyboard shortcuts in JOY ERP to navigate 3x faster!\n\nCtrl+K → Quick search\nCtrl+N → New task\nCtrl+Shift+P → New project\n\n#Productivity #ERPtips #WorkSmarter",
     tags: ["productivity", "tips"],
   },
   {
@@ -90,7 +90,7 @@ export const MOCK_CONTENTS: StudioContent[] = [
     scheduledAt: null,
     publishedAt: null,
     createdAt: "2026-05-25T11:00:00",
-    body: "Q2 2026 has been an incredible quarter for JOY CRM...\n\n[Content in progress]",
+    body: "Q2 2026 has been an incredible quarter for JOY ERP...\n\n[Content in progress]",
     tags: ["quarterly", "review"],
   },
   {
@@ -102,7 +102,7 @@ export const MOCK_CONTENTS: StudioContent[] = [
     scheduledAt: "2026-05-28T09:00:00",
     publishedAt: null,
     createdAt: "2026-05-25T08:30:00",
-    socialText: "Excited to announce AI Studio – your new content creation powerhouse inside JOY CRM!\n\nCreate blogs, posters, social posts and emails with AI assistance. Schedule across all your platforms from one place.\n\n#AIContent #CRM #Productivity",
+    socialText: "Excited to announce AI Studio – your new content creation powerhouse inside JOY ERP!\n\nCreate blogs, posters, social posts and emails with AI assistance. Schedule across all your platforms from one place.\n\n#AIContent #ERP #Productivity",
     tags: ["feature", "ai", "announcement"],
   },
   {
@@ -142,9 +142,9 @@ export function simulateAI(delay = 1200): Promise<string> {
   return new Promise((resolve) => {
     setTimeout(() => {
       const samples = [
-        "In today's fast-paced business environment, staying ahead of the curve is more important than ever. JOY CRM empowers your team to collaborate seamlessly, track projects efficiently, and deliver results that matter.\n\nOur latest AI-powered features make content creation effortless — from blog posts to social media updates, everything you need is just a click away.",
-        "Transform the way your team works with JOY CRM. Our platform brings together project management, team collaboration, and AI-powered content creation in one unified experience.\n\nWhy settle for less when you can have it all?",
-        "Did you know that teams using JOY CRM report a 40% increase in productivity? Our integrated tools help you streamline workflows, reduce manual tasks, and focus on what truly matters — growing your business.",
+        "In today's fast-paced business environment, staying ahead of the curve is more important than ever. JOY ERP empowers your team to collaborate seamlessly, track projects efficiently, and deliver results that matter.\n\nOur latest AI-powered features make content creation effortless — from blog posts to social media updates, everything you need is just a click away.",
+        "Transform the way your team works with JOY ERP. Our platform brings together project management, team collaboration, and AI-powered content creation in one unified experience.\n\nWhy settle for less when you can have it all?",
+        "Did you know that teams using JOY ERP report a 40% increase in productivity? Our integrated tools help you streamline workflows, reduce manual tasks, and focus on what truly matters — growing your business.",
       ];
       resolve(samples[Math.floor(Math.random() * samples.length)]);
     }, delay);
@@ -155,9 +155,9 @@ export function simulateAISocial(delay = 1000): Promise<string> {
   return new Promise((resolve) => {
     setTimeout(() => {
       const samples = [
-        "Excited to share our latest milestone! 🚀 JOY CRM just hit a new record — 10,000 active users. Thank you to our amazing community for your continued support!\n\n#JOYCRM #Milestone #Growth",
-        "Productivity hack: Use AI Studio in JOY CRM to generate your social content in seconds. Save hours every week! ⏱️✨\n\n#Productivity #AIContent #CRM",
-        "Behind every great team is a great tool. JOY CRM helps you stay organized, collaborate better, and achieve more. Try it today! 💪\n\n#TeamWork #CRM #Productivity",
+        "Excited to share our latest milestone! 🚀 JOY ERP just hit a new record — 10,000 active users. Thank you to our amazing community for your continued support!\n\n#JOYERP #Milestone #Growth",
+        "Productivity hack: Use AI Studio in JOY ERP to generate your social content in seconds. Save hours every week! ⏱️✨\n\n#Productivity #AIContent #ERP",
+        "Behind every great team is a great tool. JOY ERP helps you stay organized, collaborate better, and achieve more. Try it today! 💪\n\n#TeamWork #ERP #Productivity",
       ];
       resolve(samples[Math.floor(Math.random() * samples.length)]);
     }, delay);
@@ -169,7 +169,7 @@ export function simulateAIEmail(delay = 1300): Promise<string> {
     setTimeout(() => {
       const samples = [
         "Dear Team,\n\nI hope this message finds you well. Here's a quick update on our progress this month:\n\n• Successfully launched the AI Studio module\n• Resolved 15+ support tickets\n• Improved system performance by 25%\n\nThank you for your continued hard work and dedication.\n\nBest regards,\nThe Management Team",
-        "Hi everyone,\n\nAs we wrap up another successful month, I wanted to take a moment to recognize the incredible work being done across all departments.\n\nYour commitment to excellence is what makes JOY CRM great.\n\nLet's keep pushing boundaries!\n\nWarmly,\nLeadership",
+        "Hi everyone,\n\nAs we wrap up another successful month, I wanted to take a moment to recognize the incredible work being done across all departments.\n\nYour commitment to excellence is what makes JOY ERP great.\n\nLet's keep pushing boundaries!\n\nWarmly,\nLeadership",
       ];
       resolve(samples[Math.floor(Math.random() * samples.length)]);
     }, delay);

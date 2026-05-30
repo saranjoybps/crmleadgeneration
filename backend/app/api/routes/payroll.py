@@ -226,7 +226,7 @@ def calculate_all_salaries(
     ctx: RequestContext = Depends(require_module_permission("payroll", "view")),
 ):
     import logging
-    logger = logging.getLogger("joycrm.payroll")
+    logger = logging.getLogger("joyerp.payroll")
     from datetime import datetime
     now = datetime.now()
     m = month or now.month

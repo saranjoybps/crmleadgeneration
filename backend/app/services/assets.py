@@ -51,6 +51,16 @@ class AssetService:
 
     @staticmethod
     def create_asset(supabase: Client, payload: AssetCreate, ctx: RequestContext):
+        existing = (
+            supabase.table("assets")
+            .select("id")
+            .eq("tenant_id", ctx.tenant_id)
+            .eq("asset_tag", payload.asset_tag)
+            .maybe_single()
+            .execute()
+        )
+        if existing.data:
+            raise HTTPException(status_code=409, detail=f"Asset tag '{payload.asset_tag}' already exists in this organization")
         try:
             created = (
                 supabase.table("assets")
@@ -81,6 +91,18 @@ class AssetService:
         update_data = payload.model_dump(exclude_unset=True)
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
+        if "asset_tag" in update_data:
+            duplicate = (
+                supabase.table("assets")
+                .select("id")
+                .eq("tenant_id", ctx.tenant_id)
+                .eq("asset_tag", update_data["asset_tag"])
+                .neq("id", asset_id)
+                .maybe_single()
+                .execute()
+            )
+            if duplicate.data:
+                raise HTTPException(status_code=409, detail=f"Asset tag '{update_data['asset_tag']}' already exists in this organization")
         try:
             updated = (
                 supabase.table("assets")

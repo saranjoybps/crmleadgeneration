@@ -31,6 +31,8 @@ type Props = {
   assets: Asset[];
   assignments: AssetAssignment[];
   users: UserType[];
+  error: string;
+  success: string;
 };
 
 const TYPE_ICONS: Record<AssetType, React.ComponentType<{ className?: string }>> = {
@@ -56,7 +58,7 @@ const STATUS_BADGE: Record<AssetStatus, { variant: "success" | "warning" | "dang
 
 type Tab = "assets" | "assignments" | "my-assets";
 
-export default function AssetsContent({ orgSlug, currentUserId, assetsPerm, assets, assignments, users }: Props) {
+export default function AssetsContent({ orgSlug, currentUserId, assetsPerm, assets, assignments, users, error, success }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("assets");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("");
@@ -122,6 +124,12 @@ export default function AssetsContent({ orgSlug, currentUserId, assetsPerm, asse
           <p className="mt-1 text-muted font-medium">Track laptops, ID cards, gifts, and other organization assets.</p>
         </div>
       </header>
+
+      {(error || success) && (
+        <div className={cn("rounded-xl border px-4 py-3 text-sm", error ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700")}>
+          {error || success}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

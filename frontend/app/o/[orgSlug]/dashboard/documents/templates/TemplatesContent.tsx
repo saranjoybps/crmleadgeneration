@@ -20,6 +20,7 @@ type TemplatesContentProps = {
   templates: DocumentTemplate[];
   docTypes: Array<{ id: string; name: string; key: string }>;
   canCreate: boolean;
+  canEdit: boolean;
   canDelete: boolean;
   baseUrl: string;
   search: string;
@@ -37,7 +38,7 @@ function formatDate(dateStr: string) {
 }
 
 export default function TemplatesContent({
-  orgSlug, templates, docTypes, canCreate, canDelete, baseUrl,
+  orgSlug, templates, docTypes, canCreate, canEdit, canDelete, baseUrl,
   search, document_type_id, error, success,
 }: TemplatesContentProps) {
   const [modal, setModal] = useState<ModalState>(null);
@@ -86,10 +87,12 @@ export default function TemplatesContent({
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
-          <Button size="sm" onClick={() => setModal({ type: "create" })}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Template
-          </Button>
+          {canCreate && (
+            <Button onClick={() => setModal({ type: "create" })}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              New Template
+            </Button>
+          )}
         </div>
 
         {templates.length > 0 ? (
@@ -107,11 +110,13 @@ export default function TemplatesContent({
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Badge variant="outline" className="text-[10px]">{formatDate(template.updated_at)}</Badge>
-                  <Link href={`${baseUrl}/${template.id}`}>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
+                  {canEdit && (
+                    <Link href={`${baseUrl}/${template.id}`}>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  )}
                   {canDelete && (
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl hover:bg-red-50 hover:text-red-600" onClick={() => setModal({ type: "delete", template_id: template.id })}>
                       <Trash2 className="h-3.5 w-3.5" />
@@ -126,12 +131,14 @@ export default function TemplatesContent({
             <FileText className="h-10 w-10 mb-3 text-slate-300" />
             <p className="text-lg font-medium">No templates yet</p>
             <p className="text-sm mt-1 mb-4">Create your first reusable document template.</p>
-            <Button variant="outline" onClick={() => setModal({ type: "create" })}>Create Template</Button>
+            {canCreate && (
+              <Button variant="outline" onClick={() => setModal({ type: "create" })}>Create Template</Button>
+            )}
           </div>
         )}
       </Card>
 
-      {modal?.type === "create" && (
+      {canCreate && modal?.type === "create" && (
         <Modal isOpen={true} onClose={() => setModal(null)} title="Create Template">
           <form action={createTemplate} className="space-y-6">
             <input type="hidden" name="organization_slug" value={orgSlug} />
@@ -147,9 +154,9 @@ export default function TemplatesContent({
                 ))}
               </select>
             </div>
-            <div className="flex gap-3 pt-6 border-t border-soft">
-              <Button type="submit" className="flex-1 py-4">Create Template</Button>
-              <Button variant="outline" type="button" className="flex-1 py-4" onClick={() => setModal(null)}>Cancel</Button>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" type="button" onClick={() => setModal(null)}>Cancel</Button>
+              <Button type="submit">Create Template</Button>
             </div>
           </form>
         </Modal>
@@ -165,11 +172,13 @@ export default function TemplatesContent({
               <h4 className="text-xl font-bold text-main tracking-tight">Delete Template?</h4>
               <p className="mt-2 text-xs text-muted">Delete &quot;{selectedTemplate.name}&quot;?</p>
             </div>
-            <form action={deleteTemplate} className="flex flex-col gap-2 px-2">
+            <form action={deleteTemplate}>
               <input type="hidden" name="organization_slug" value={orgSlug} />
               <input type="hidden" name="template_id" value={selectedTemplate.id} />
-              <Button variant="danger" type="submit" className="py-3">Delete</Button>
-              <Button variant="outline" className="w-full py-3 border-none text-muted" onClick={() => setModal(null)}>Cancel</Button>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" type="button" onClick={() => setModal(null)}>Cancel</Button>
+                <Button variant="danger" type="submit">Delete</Button>
+              </div>
             </form>
           </div>
         </Modal>

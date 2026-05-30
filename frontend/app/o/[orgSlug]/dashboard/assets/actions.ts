@@ -24,7 +24,7 @@ export async function createAsset(formData: FormData) {
       brand: String(formData.get("brand") ?? "").trim() || null,
       model: String(formData.get("model") ?? "").trim() || null,
       purchase_date: String(formData.get("purchase_date") ?? "").trim() || null,
-      purchase_price: String(formData.get("purchase_price") ?? "").trim() || null,
+      purchase_price: (() => { const v = String(formData.get("purchase_price") ?? "").trim(); return v ? Number(v) : null; })(),
       notes: String(formData.get("notes") ?? "").trim() || null,
     },
   });
@@ -51,8 +51,8 @@ export async function updateAsset(formData: FormData) {
   }
   const purchaseDate = String(formData.get("purchase_date") ?? "").trim();
   if (purchaseDate) body["purchase_date"] = purchaseDate;
-  const purchasePrice = String(formData.get("purchase_price") ?? "").trim();
-  if (purchasePrice) body["purchase_price"] = purchasePrice;
+  const purchasePriceVal = String(formData.get("purchase_price") ?? "").trim();
+  if (purchasePriceVal) body["purchase_price"] = Number(purchasePriceVal);
 
   const { error } = await apiRequest(`/api/v1/assets/${encodeURIComponent(assetId)}`, {
     method: "PUT",

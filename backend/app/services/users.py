@@ -8,7 +8,7 @@ from supabase import Client
 from app.core.deps import RequestContext
 from app.schemas.common import UserCreate, UserUpdate
 
-logger = logging.getLogger("joycrm.services.users")
+logger = logging.getLogger("joyerp.services.users")
 
 
 class UserService:

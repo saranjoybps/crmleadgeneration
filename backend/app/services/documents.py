@@ -273,7 +273,10 @@ class DocumentsService:
     @staticmethod
     async def download_pdf(supabase: Client, doc_id: str, ctx: RequestContext):
         doc = DocumentsService.get_generated_document(supabase, doc_id, ctx)
-        template = DocumentsService.get_template(supabase, str(doc["template_id"]), ctx)
+        tid = doc.get("template_id")
+        if not tid:
+            raise HTTPException(status_code=400, detail="Document has no associated template; PDF generation requires a template")
+        template = DocumentsService.get_template(supabase, str(tid), ctx)
         rendered_html = DocumentsService._render_template(template["content"], doc["content_data"])
         full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
         pdf_bytes = await asyncio.to_thread(DocumentsService._render_pdf_sync, full_html)

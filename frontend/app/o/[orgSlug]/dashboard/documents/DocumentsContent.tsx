@@ -51,10 +51,10 @@ export default function DocumentsContent({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-main">Documents</h1>
-          <p className="text-sm text-muted mt-1">Manage generated documents</p>
+          <h1 className="text-3xl font-bold tracking-tight text-main">Documents</h1>
+          <p className="text-muted mt-1">Manage generated documents</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <Link href={`${baseUrl}/templates`}>
             <Button variant="outline" size="sm">
               <FileText className="h-4 w-4 mr-1.5" />
@@ -63,7 +63,7 @@ export default function DocumentsContent({
           </Link>
           {canCreate && (
             <Link href={`${baseUrl}/generate`}>
-              <Button size="sm">
+              <Button>
                 <Plus className="h-4 w-4 mr-1.5" />
                 Generate
               </Button>
@@ -190,11 +190,13 @@ export default function DocumentsContent({
               <h4 className="text-xl font-bold text-main tracking-tight">Delete Document?</h4>
               <p className="mt-2 text-xs text-muted">Delete &quot;{selectedDoc.title}&quot;?</p>
             </div>
-            <form action={deleteDocument} className="flex flex-col gap-2 px-2">
+            <form action={deleteDocument}>
               <input type="hidden" name="organization_slug" value={orgSlug} />
               <input type="hidden" name="doc_id" value={selectedDoc.id} />
-              <Button variant="danger" type="submit" className="py-3">Delete</Button>
-              <Button variant="outline" className="w-full py-3 border-none text-muted" onClick={() => setModal(null)}>Cancel</Button>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" type="button" onClick={() => setModal(null)}>Cancel</Button>
+                <Button variant="danger" type="submit">Delete</Button>
+              </div>
             </form>
           </div>
         </Modal>

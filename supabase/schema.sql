@@ -530,7 +530,7 @@ create table if not exists public.tasks (
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   department_id uuid null references public.departments(id) on delete set null,
   project_id uuid not null references public.projects(id) on delete cascade,
-  ticket_id uuid not null references public.tickets(id) on delete cascade,
+  ticket_id uuid null references public.tickets(id) on delete set null,
   title text not null,
   description text null,
   priority public.priority_level not null default 'medium',
@@ -547,6 +547,19 @@ create table if not exists public.tasks (
 do $$ begin
   if not exists (select 1 from information_schema.columns where table_name = 'tasks' and column_name = 'department_id') then
     alter table public.tasks add column department_id uuid null references public.departments(id) on delete set null;
+  end if;
+end $$;
+
+-- Make tasks.ticket_id nullable and change FK to SET NULL (allows tasks without a ticket)
+do $$ begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'tasks' and column_name = 'ticket_id' and is_nullable = 'NO'
+  ) then
+    alter table public.tasks drop constraint if exists tasks_ticket_id_fkey;
+    alter table public.tasks alter column ticket_id drop not null;
+    alter table public.tasks add constraint tasks_ticket_id_fkey
+      foreign key (ticket_id) references public.tickets(id) on delete set null;
   end if;
 end $$;
 
@@ -1011,13 +1024,16 @@ declare
   v_total int;
   v_closed int;
 begin
+  if p_ticket_id is null then
+    return;
+  end if;
   select count(*), count(*) filter (where status = 'closed')
   into v_total, v_closed
   from public.tasks
   where ticket_id = p_ticket_id;
 
   if v_total > 0 and v_total = v_closed then
-    update public.tickets set status = 'closed', updated_at = now() where id = p_ticket_id and status <> 'closed';
+    update public.tickets set status = 'closed', updated_at = now() where id = p_ticket_id and status not in ('closed', 'hold', 'review');
   elsif v_total > 0 then
     update public.tickets set status = 'in_progress', updated_at = now() where id = p_ticket_id and status = 'closed';
   end if;
@@ -1060,9 +1076,11 @@ begin
       raise exception 'Tenant mismatch for ticket watcher';
     end if;
   elsif tg_table_name = 'tasks' then
-    select tenant_id into v_tenant from public.tickets where id = new.ticket_id;
-    if v_tenant is null or v_tenant <> new.tenant_id then
-      raise exception 'Tenant mismatch for task ticket';
+    if new.ticket_id is not null then
+      select tenant_id into v_tenant from public.tickets where id = new.ticket_id;
+      if v_tenant is null or v_tenant <> new.tenant_id then
+        raise exception 'Tenant mismatch for task ticket';
+      end if;
     end if;
     select tenant_id into v_tenant from public.projects where id = new.project_id;
     if v_tenant is null or v_tenant <> new.tenant_id then
@@ -1113,8 +1131,49 @@ security definer
 set search_path = public
 as $$
 begin
-  perform public.sync_ticket_status_from_tasks(coalesce(new.ticket_id, old.ticket_id));
+  if tg_op = 'UPDATE' and new.ticket_id is distinct from old.ticket_id then
+    perform public.sync_ticket_status_from_tasks(old.ticket_id);
+    perform public.sync_ticket_status_from_tasks(new.ticket_id);
+  else
+    perform public.sync_ticket_status_from_tasks(coalesce(new.ticket_id, old.ticket_id));
+  end if;
   return coalesce(new, old);
+end;
+$$;
+
+create or replace function public.cascade_milestone_dates_to_tickets()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.due_date is distinct from new.due_date and new.due_date is not null then
+    update public.tickets
+    set due_date = new.due_date, updated_at = now()
+    where milestone_id = new.id
+      and (due_date is null or due_date = old.due_date)
+      and due_date is distinct from new.due_date;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.cascade_ticket_dates_to_tasks()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.due_date is distinct from new.due_date and new.due_date is not null then
+    update public.tasks
+    set due_date = new.due_date, updated_at = now()
+    where ticket_id = new.id
+      and (due_date is null or due_date = old.due_date)
+      and due_date is distinct from new.due_date;
+  end if;
+  return new;
 end;
 $$;
 
@@ -1393,9 +1452,19 @@ drop trigger if exists trg_milestones_tenant_guard on public.milestones;
 create trigger trg_milestones_tenant_guard before insert or update on public.milestones
 for each row execute function public.enforce_linked_tenant_consistency();
 
+drop trigger if exists trg_milestones_cascade_dates on public.milestones;
+create trigger trg_milestones_cascade_dates
+  after update of due_date on public.milestones
+  for each row execute function public.cascade_milestone_dates_to_tickets();
+
 drop trigger if exists trg_tickets_tenant_guard on public.tickets;
 create trigger trg_tickets_tenant_guard before insert or update on public.tickets
 for each row execute function public.enforce_linked_tenant_consistency();
+
+drop trigger if exists trg_tickets_cascade_dates on public.tickets;
+create trigger trg_tickets_cascade_dates
+  after update of due_date on public.tickets
+  for each row execute function public.cascade_ticket_dates_to_tasks();
 
 drop trigger if exists trg_ticket_watchers_tenant_guard on public.ticket_watchers;
 create trigger trg_ticket_watchers_tenant_guard before insert or update on public.ticket_watchers
@@ -1771,51 +1840,59 @@ drop policy if exists shifts_select_member on public.shifts;
 create policy shifts_select_member on public.shifts
 for select using (public.is_tenant_member(tenant_id));
 
-drop policy if exists shifts_insert_admin on public.shifts;
-create policy shifts_insert_admin on public.shifts
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists shifts_insert on public.shifts;
+create policy shifts_insert on public.shifts
+for insert with check (public.has_module_permission(tenant_id, 'shift', 'create'));
 
-drop policy if exists shifts_update_admin on public.shifts;
-create policy shifts_update_admin on public.shifts
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists shifts_update on public.shifts;
+create policy shifts_update on public.shifts
+for update using (public.has_module_permission(tenant_id, 'shift', 'edit'))
+with check (public.has_module_permission(tenant_id, 'shift', 'edit'));
 
-drop policy if exists shifts_delete_admin on public.shifts;
-create policy shifts_delete_admin on public.shifts
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists shifts_delete on public.shifts;
+create policy shifts_delete on public.shifts
+for delete using (public.has_module_permission(tenant_id, 'shift', 'delete'));
 
 -- ----------
 -- User Shift Assignments RLS
 -- ----------
 alter table public.user_shift_assignments enable row level security;
 
-drop policy if exists user_shift_assignments_select_member on public.user_shift_assignments;
-create policy user_shift_assignments_select_member on public.user_shift_assignments
+drop policy if exists user_shift_assignments_select on public.user_shift_assignments;
+create policy user_shift_assignments_select on public.user_shift_assignments
 for select using (
   public.is_tenant_member(tenant_id)
   and (
     user_id = public.current_app_user_id()
-    or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+    or public.has_module_permission(tenant_id, 'shift', 'view')
   )
 );
 
-drop policy if exists user_shift_assignments_manage_admin on public.user_shift_assignments;
-create policy user_shift_assignments_manage_admin on public.user_shift_assignments
-for all using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists user_shift_assignments_insert on public.user_shift_assignments;
+create policy user_shift_assignments_insert on public.user_shift_assignments
+for insert with check (public.has_module_permission(tenant_id, 'shift', 'create'));
+
+drop policy if exists user_shift_assignments_update on public.user_shift_assignments;
+create policy user_shift_assignments_update on public.user_shift_assignments
+for update using (public.has_module_permission(tenant_id, 'shift', 'edit'))
+with check (public.has_module_permission(tenant_id, 'shift', 'edit'));
+
+drop policy if exists user_shift_assignments_delete on public.user_shift_assignments;
+create policy user_shift_assignments_delete on public.user_shift_assignments
+for delete using (public.has_module_permission(tenant_id, 'shift', 'delete'));
 
 -- ----------
 -- Attendance Records RLS
 -- ----------
 alter table public.attendance_records enable row level security;
 
-drop policy if exists attendance_records_select_own_or_admin on public.attendance_records;
-create policy attendance_records_select_own_or_admin on public.attendance_records
+drop policy if exists attendance_records_select on public.attendance_records;
+create policy attendance_records_select on public.attendance_records
 for select using (
   public.is_tenant_member(tenant_id)
   and (
     user_id = public.current_app_user_id()
-    or public.has_tenant_role(tenant_id, array['owner','admin']::text[])
+    or public.has_module_permission(tenant_id, 'attendance', 'view')
   )
 );
 
@@ -1837,14 +1914,14 @@ with check (
   and user_id = public.current_app_user_id()
 );
 
-drop policy if exists attendance_records_correct_admin on public.attendance_records;
-create policy attendance_records_correct_admin on public.attendance_records
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists attendance_records_update on public.attendance_records;
+create policy attendance_records_update on public.attendance_records
+for update using (public.has_module_permission(tenant_id, 'attendance', 'edit'))
+with check (public.has_module_permission(tenant_id, 'attendance', 'edit'));
 
-drop policy if exists attendance_records_delete_admin on public.attendance_records;
-create policy attendance_records_delete_admin on public.attendance_records
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists attendance_records_delete on public.attendance_records;
+create policy attendance_records_delete on public.attendance_records
+for delete using (public.has_module_permission(tenant_id, 'attendance', 'delete'));
 
 -- ----------
 -- Leave Types RLS
@@ -1858,55 +1935,55 @@ for select using (
   or public.is_tenant_member(tenant_id)
 );
 
-drop policy if exists leave_types_manage_admin on public.leave_types;
-create policy leave_types_manage_admin on public.leave_types
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists leave_types_insert on public.leave_types;
+create policy leave_types_insert on public.leave_types
+for insert with check (public.has_module_permission(tenant_id, 'leave', 'create'));
 
-drop policy if exists leave_types_update_admin on public.leave_types;
-create policy leave_types_update_admin on public.leave_types
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists leave_types_update on public.leave_types;
+create policy leave_types_update on public.leave_types
+for update using (public.has_module_permission(tenant_id, 'leave', 'edit'))
+with check (public.has_module_permission(tenant_id, 'leave', 'edit'));
 
-drop policy if exists leave_types_delete_admin on public.leave_types;
-create policy leave_types_delete_admin on public.leave_types
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists leave_types_delete on public.leave_types;
+create policy leave_types_delete on public.leave_types
+for delete using (public.has_module_permission(tenant_id, 'leave', 'delete'));
 
 -- ----------
 -- Leave Balances RLS
 -- ----------
 alter table public.leave_balances enable row level security;
 
-drop policy if exists leave_balances_select_own_or_admin on public.leave_balances;
-create policy leave_balances_select_own_or_admin on public.leave_balances
+drop policy if exists leave_balances_select on public.leave_balances;
+create policy leave_balances_select on public.leave_balances
 for select using (
   public.is_tenant_member(tenant_id)
   and (
     user_id = public.current_app_user_id()
-    or public.has_tenant_role(tenant_id, array['owner','admin'])
+    or public.has_module_permission(tenant_id, 'leave', 'view')
   )
 );
 
-drop policy if exists leave_balances_upsert_admin on public.leave_balances;
-create policy leave_balances_upsert_admin on public.leave_balances
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists leave_balances_insert on public.leave_balances;
+create policy leave_balances_insert on public.leave_balances
+for insert with check (public.has_module_permission(tenant_id, 'leave', 'create'));
 
-drop policy if exists leave_balances_update_admin on public.leave_balances;
-create policy leave_balances_update_admin on public.leave_balances
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists leave_balances_update on public.leave_balances;
+create policy leave_balances_update on public.leave_balances
+for update using (public.has_module_permission(tenant_id, 'leave', 'edit'))
+with check (public.has_module_permission(tenant_id, 'leave', 'edit'));
 
 -- ----------
 -- Leave Requests RLS
 -- ----------
 alter table public.leave_requests enable row level security;
 
-drop policy if exists leave_requests_select_own_or_admin on public.leave_requests;
-create policy leave_requests_select_own_or_admin on public.leave_requests
+drop policy if exists leave_requests_select on public.leave_requests;
+create policy leave_requests_select on public.leave_requests
 for select using (
   public.is_tenant_member(tenant_id)
   and (
     user_id = public.current_app_user_id()
-    or public.has_tenant_role(tenant_id, array['owner','admin'])
+    or public.has_module_permission(tenant_id, 'leave', 'view')
   )
 );
 
@@ -1946,14 +2023,14 @@ drop policy if exists candidates_insert_member on public.candidates;
 create policy candidates_insert_member on public.candidates
 for insert with check (public.is_tenant_member(tenant_id));
 
-drop policy if exists candidates_update_admin on public.candidates;
-create policy candidates_update_admin on public.candidates
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists candidates_update on public.candidates;
+create policy candidates_update on public.candidates
+for update using (public.has_module_permission(tenant_id, 'recruitment', 'edit'))
+with check (public.has_module_permission(tenant_id, 'recruitment', 'edit'));
 
-drop policy if exists candidates_delete_admin on public.candidates;
-create policy candidates_delete_admin on public.candidates
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists candidates_delete on public.candidates;
+create policy candidates_delete on public.candidates
+for delete using (public.has_module_permission(tenant_id, 'recruitment', 'delete'));
 
 -- ----------
 -- Candidate Status Log RLS
@@ -1981,14 +2058,14 @@ drop policy if exists interviews_insert_member on public.interviews;
 create policy interviews_insert_member on public.interviews
 for insert with check (public.is_tenant_member(tenant_id));
 
-drop policy if exists interviews_update_admin on public.interviews;
-create policy interviews_update_admin on public.interviews
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists interviews_update on public.interviews;
+create policy interviews_update on public.interviews
+for update using (public.has_module_permission(tenant_id, 'recruitment', 'edit'))
+with check (public.has_module_permission(tenant_id, 'recruitment', 'edit'));
 
-drop policy if exists interviews_delete_admin on public.interviews;
-create policy interviews_delete_admin on public.interviews
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists interviews_delete on public.interviews;
+create policy interviews_delete on public.interviews
+for delete using (public.has_module_permission(tenant_id, 'recruitment', 'delete'));
 
 -- ----------
 -- Todos RLS
@@ -2535,7 +2612,7 @@ begin
     return false;
   end if;
 
-  if public.has_tenant_role(p_tenant_id, array['owner']::text[]) then
+  if public.has_module_permission(p_tenant_id, 'vault', 'view') then
     return true;
   end if;
 
@@ -2569,32 +2646,32 @@ for select using (
 drop policy if exists vault_credentials_insert_scoped on public.vault_credentials;
 create policy vault_credentials_insert_scoped on public.vault_credentials
 for insert with check (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'create')
   or created_by = public.current_app_user_id()
 );
 
 drop policy if exists vault_credentials_update_scoped on public.vault_credentials;
 create policy vault_credentials_update_scoped on public.vault_credentials
 for update using (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'edit')
   or created_by = public.current_app_user_id()
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'edit')
   or created_by = public.current_app_user_id()
 );
 
 drop policy if exists vault_credentials_delete_scoped on public.vault_credentials;
 create policy vault_credentials_delete_scoped on public.vault_credentials
 for delete using (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'delete')
   or created_by = public.current_app_user_id()
 );
 
 drop policy if exists vault_shares_select_scoped on public.vault_credential_shares;
 create policy vault_shares_select_scoped on public.vault_credential_shares
 for select using (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'view')
   or user_id = public.current_app_user_id()
   or exists (
     select 1 from public.vault_credentials c
@@ -2607,7 +2684,7 @@ for select using (
 drop policy if exists vault_shares_manage_scoped on public.vault_credential_shares;
 create policy vault_shares_manage_scoped on public.vault_credential_shares
 for all using (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'edit')
   or exists (
     select 1 from public.vault_credentials c
     where c.id = vault_credential_shares.credential_id
@@ -2616,7 +2693,7 @@ for all using (
   )
 )
 with check (
-  public.has_tenant_role(tenant_id, array['owner']::text[])
+  public.has_module_permission(tenant_id, 'vault', 'edit')
   or exists (
     select 1 from public.vault_credentials c
     where c.id = vault_credential_shares.credential_id
@@ -2704,49 +2781,52 @@ alter table public.generated_documents enable row level security;
 
 drop policy if exists document_types_select_member on public.document_types;
 create policy document_types_select_member on public.document_types
-for select using (public.is_tenant_member(tenant_id) or tenant_id is null);
+for select using (
+  (tenant_id is null) or
+  public.has_module_permission(tenant_id, 'documents', 'view')
+);
 
-drop policy if exists document_types_insert_admin on public.document_types;
-create policy document_types_insert_admin on public.document_types
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists document_types_insert_member on public.document_types;
+create policy document_types_insert_member on public.document_types
+for insert with check (public.has_module_permission(tenant_id, 'documents', 'create'));
 
-drop policy if exists document_types_update_admin on public.document_types;
-create policy document_types_update_admin on public.document_types
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists document_types_update_member on public.document_types;
+create policy document_types_update_member on public.document_types
+for update using (public.has_module_permission(tenant_id, 'documents', 'edit'))
+with check (public.has_module_permission(tenant_id, 'documents', 'edit'));
 
-drop policy if exists document_types_delete_admin on public.document_types;
-create policy document_types_delete_admin on public.document_types
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists document_types_delete_member on public.document_types;
+create policy document_types_delete_member on public.document_types
+for delete using (public.has_module_permission(tenant_id, 'documents', 'delete'));
 
 drop policy if exists document_templates_select_member on public.document_templates;
 create policy document_templates_select_member on public.document_templates
-for select using (public.is_tenant_member(tenant_id));
+for select using (public.has_module_permission(tenant_id, 'documents', 'view'));
 
 drop policy if exists document_templates_insert_member on public.document_templates;
 create policy document_templates_insert_member on public.document_templates
-for insert with check (public.is_tenant_member(tenant_id));
+for insert with check (public.has_module_permission(tenant_id, 'documents', 'create'));
 
-drop policy if exists document_templates_update_admin on public.document_templates;
-create policy document_templates_update_admin on public.document_templates
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists document_templates_update_member on public.document_templates;
+create policy document_templates_update_member on public.document_templates
+for update using (public.has_module_permission(tenant_id, 'documents', 'edit'))
+with check (public.has_module_permission(tenant_id, 'documents', 'edit'));
 
-drop policy if exists document_templates_delete_admin on public.document_templates;
-create policy document_templates_delete_admin on public.document_templates
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists document_templates_delete_member on public.document_templates;
+create policy document_templates_delete_member on public.document_templates
+for delete using (public.has_module_permission(tenant_id, 'documents', 'delete'));
 
 drop policy if exists generated_documents_select_member on public.generated_documents;
 create policy generated_documents_select_member on public.generated_documents
-for select using (public.is_tenant_member(tenant_id));
+for select using (public.has_module_permission(tenant_id, 'documents', 'view'));
 
 drop policy if exists generated_documents_insert_member on public.generated_documents;
 create policy generated_documents_insert_member on public.generated_documents
-for insert with check (public.is_tenant_member(tenant_id));
+for insert with check (public.has_module_permission(tenant_id, 'documents', 'create'));
 
-drop policy if exists generated_documents_delete_admin on public.generated_documents;
-create policy generated_documents_delete_admin on public.generated_documents
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists generated_documents_delete_member on public.generated_documents;
+create policy generated_documents_delete_member on public.generated_documents
+for delete using (public.has_module_permission(tenant_id, 'documents', 'delete'));
 
 -- Document updated_at triggers
 drop trigger if exists trg_document_templates_updated_at on public.document_templates;
@@ -2803,20 +2883,20 @@ alter table public.assets enable row level security;
 
 drop policy if exists assets_select_member on public.assets;
 create policy assets_select_member on public.assets
-for select using (public.is_tenant_member(tenant_id));
+for select using (public.has_module_permission(tenant_id, 'assets', 'view'));
 
-drop policy if exists assets_insert_admin on public.assets;
-create policy assets_insert_admin on public.assets
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists assets_insert_member on public.assets;
+create policy assets_insert_member on public.assets
+for insert with check (public.has_module_permission(tenant_id, 'assets', 'create'));
 
-drop policy if exists assets_update_admin on public.assets;
-create policy assets_update_admin on public.assets
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists assets_update_member on public.assets;
+create policy assets_update_member on public.assets
+for update using (public.has_module_permission(tenant_id, 'assets', 'edit'))
+with check (public.has_module_permission(tenant_id, 'assets', 'edit'));
 
-drop policy if exists assets_delete_admin on public.assets;
-create policy assets_delete_admin on public.assets
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists assets_delete_member on public.assets;
+create policy assets_delete_member on public.assets
+for delete using (public.has_module_permission(tenant_id, 'assets', 'delete'));
 
 create table if not exists public.asset_assignments (
   id uuid primary key default gen_random_uuid(),
@@ -2839,20 +2919,20 @@ alter table public.asset_assignments enable row level security;
 
 drop policy if exists asset_assignments_select_member on public.asset_assignments;
 create policy asset_assignments_select_member on public.asset_assignments
-for select using (public.is_tenant_member(tenant_id));
+for select using (public.has_module_permission(tenant_id, 'assets', 'view'));
 
-drop policy if exists asset_assignments_insert_admin on public.asset_assignments;
-create policy asset_assignments_insert_admin on public.asset_assignments
-for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists asset_assignments_insert_member on public.asset_assignments;
+create policy asset_assignments_insert_member on public.asset_assignments
+for insert with check (public.has_module_permission(tenant_id, 'assets', 'create'));
 
-drop policy if exists asset_assignments_update_admin on public.asset_assignments;
-create policy asset_assignments_update_admin on public.asset_assignments
-for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
-with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists asset_assignments_update_member on public.asset_assignments;
+create policy asset_assignments_update_member on public.asset_assignments
+for update using (public.has_module_permission(tenant_id, 'assets', 'edit'))
+with check (public.has_module_permission(tenant_id, 'assets', 'edit'));
 
-drop policy if exists asset_assignments_delete_admin on public.asset_assignments;
-create policy asset_assignments_delete_admin on public.asset_assignments
-for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+drop policy if exists asset_assignments_delete_member on public.asset_assignments;
+create policy asset_assignments_delete_member on public.asset_assignments
+for delete using (public.has_module_permission(tenant_id, 'assets', 'delete'));
 
 drop trigger if exists trg_assets_updated_at on public.assets;
 create trigger trg_assets_updated_at before update on public.assets
@@ -3548,3 +3628,17 @@ INSERT INTO public.modules (key, label) VALUES
   ('chat', 'Chat')
 ON CONFLICT (key)
 DO UPDATE SET label = excluded.label;
+
+-- Enable Realtime for chat_messages (needed for live message delivery)
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chat_messages'
+  ) then
+    alter publication supabase_realtime add table public.chat_messages;
+  end if;
+end;
+$$;

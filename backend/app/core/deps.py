@@ -8,7 +8,7 @@ from supabase import Client
 from app.core.auth import get_authenticated_access_token, get_authenticated_user_id
 from app.core.supabase_client import get_supabase_client
 
-logger = logging.getLogger("joycrm.auth_flow")
+logger = logging.getLogger("joyerp.auth_flow")
 
 
 @dataclass

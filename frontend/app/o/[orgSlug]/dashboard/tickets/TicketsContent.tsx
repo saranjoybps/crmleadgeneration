@@ -14,6 +14,7 @@ import { ProjectMilestoneSelector } from "@/components/ProjectMilestoneSelector"
 import { cn } from "@/lib/utils";
 import type { Milestone } from "@/lib/types";
 import { apiRequest } from "@/lib/api-client";
+import { useModulePermissions } from "@/lib/permissions";
 import { createTicket, updateTicket, deleteTicket } from "./actions";
 
 type TicketRow = { id: string; title: string; type: string; status: string; project_id: string; milestone_id?: string; description?: string; start_date?: string; due_date?: string };
@@ -44,21 +45,21 @@ export function TicketsContent({
   currentUserId?: string;
   projectNameById: Map<string, string>;
 }) {
+  const tasksPerm = useModulePermissions("tasks");
   const [modal, setModal] = useState<ModalState>(null);
   const [selectedTicketDetails, setSelectedTicketDetails] = useState<any>(null);
   const [ticketLinkedTasks, setTicketLinkedTasks] = useState<any[]>([]);
   const selectedProject = query.project_id ?? "";
 
   const selectedTicket = useMemo(
-    () => {
-      if (!modal || !("ticket_id" in modal)) return undefined;
-      return selectedTicketDetails || tickets.find((t) => t.id === modal.ticket_id);
-    },
-    [modal, tickets, selectedTicketDetails]
+    () => selectedTicketDetails,
+    [selectedTicketDetails]
   );
 
   useEffect(() => {
     if (modal?.type === "edit" && "ticket_id" in modal) {
+      setSelectedTicketDetails(null);
+      setTicketLinkedTasks([]);
       apiRequest<any>(`/api/v1/tickets/${modal.ticket_id}`, { orgSlug }).then((res) => {
         if (res.data) {
           setSelectedTicketDetails(res.data);
@@ -247,13 +248,14 @@ export function TicketsContent({
       </Modal>
 
       {/* EDIT MODAL */}
-      {selectedTicket && (
-        <Modal
-          isOpen={modal?.type === "edit"}
-          onClose={() => setModal(null)}
-          title="Edit Ticket"
-          size="lg"
-        >
+      <Modal
+        isOpen={modal?.type === "edit"}
+        onClose={() => setModal(null)}
+        title="Edit Ticket"
+        size="lg"
+      >
+        {selectedTicket ? (
+          <>
           <form action={updateTicket} className="space-y-6">
             <input type="hidden" name="organization_slug" value={orgSlug} />
             <input type="hidden" name="ticket_id" value={selectedTicket.id} />
@@ -321,11 +323,13 @@ export function TicketsContent({
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-sm font-bold text-main">Linked Tasks</h4>
-                <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create&ticket_id=${selectedTicket.id}`}>
-                  <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600">
-                    <Plus className="h-3 w-3" /> Add Task
-                  </Button>
-                </Link>
+                {tasksPerm.can_create && (
+                  <Link href={`/o/${orgSlug}/dashboard/tasks?modal=create&ticket_id=${selectedTicket.id}`}>
+                    <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-violet-600">
+                      <Plus className="h-3 w-3" /> Add Task
+                    </Button>
+                  </Link>
+                )}
               </div>
               <div className="space-y-2">
                 {ticketLinkedTasks.length > 0 ? (
@@ -336,10 +340,12 @@ export function TicketsContent({
                         <span className="text-sm font-medium text-main">{task.title}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                         <Badge variant="outline" className="text-[10px] uppercase">{task.status}</Badge>
-                         <Link href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`}>
-                           <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
-                         </Link>
+                          <Badge variant="outline" className="text-[10px] uppercase">{task.status}</Badge>
+                          {tasksPerm.can_edit && (
+                            <Link href={`/o/${orgSlug}/dashboard/tasks?modal=edit&task_id=${task.id}`}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7"><Edit className="h-3.5 w-3.5 text-muted" /></Button>
+                            </Link>
+                          )}
                       </div>
                     </div>
                   ))
@@ -351,8 +357,13 @@ export function TicketsContent({
 
             <TicketComments ticketId={selectedTicket.id} orgSlug={orgSlug} currentUserId={currentUserId} />
           </div>
-        </Modal>
-      )}
+          </>
+        ) : (
+          <div className="flex items-center justify-center p-12">
+            <p className="text-sm text-muted">Loading ticket details...</p>
+          </div>
+        )}
+      </Modal>
 
       {/* DELETE MODAL */}
       {selectedTicket && modal?.type === "delete" && (

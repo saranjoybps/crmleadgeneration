@@ -9,7 +9,7 @@ from supabase import Client
 from app.core.deps import RequestContext
 from app.services.access_scope import AccessScopeService
 
-logger = logging.getLogger("joycrm.services.departments")
+logger = logging.getLogger("joyerp.services.departments")
 
 
 class DepartmentService:

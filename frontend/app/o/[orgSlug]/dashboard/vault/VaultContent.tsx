@@ -70,13 +70,13 @@ export default function VaultContent({
   shareMap,
 }: VaultContentProps) {
   const [modal, setModal] = useState<ModalState>(
-    query.modal === "create"
+    query.modal === "create" && vaultPerm.can_create
       ? { type: "create" }
       : query.modal === "detail" && query.credential_id
         ? { type: "detail", credential_id: query.credential_id }
-        : query.modal === "delete" && query.credential_id
+        : query.modal === "delete" && query.credential_id && vaultPerm.can_delete
           ? { type: "delete", credential_id: query.credential_id }
-          : query.modal === "share" && query.credential_id
+          : query.modal === "share" && query.credential_id && vaultPerm.can_edit
             ? { type: "share", credential_id: query.credential_id }
             : null,
   );
@@ -248,8 +248,12 @@ export default function VaultContent({
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{shareMap.get(user.id) || "none"}</Badge>
-                  <button name="access" value="grant" className="rounded-lg border border-emerald-300 px-2 py-1 text-xs text-emerald-700">Grant</button>
-                  <button name="access" value="deny" className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700">Deny</button>
+                  {vaultPerm.can_edit && (
+                    <>
+                      <button name="access" value="grant" className="rounded-lg border border-emerald-300 px-2 py-1 text-xs text-emerald-700">Grant</button>
+                      <button name="access" value="deny" className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700">Deny</button>
+                    </>
+                  )}
                 </div>
               </form>
             ))}

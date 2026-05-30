@@ -1,9 +1,9 @@
 {
-  "name": "joy-crm-frontend",
+  "name": "joy-erp-frontend",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
+    "clean": "node ./scripts/clean-next.mjs",
     "predev": "npm run clean",
     "prebuild": "npm run clean",
     "dev": "next dev",

@@ -48,6 +48,13 @@ def create_task(ticket_id: str, payload: TaskCreate, ctx: RequestContext = Depen
     return response(task)
 
 
+@router.post("")
+def create_task_direct(payload: TaskCreate, ctx: RequestContext = Depends(require_module_permission("tasks", "create"))):
+    supabase = get_supabase_client(access_token=ctx.access_token)
+    task = TaskService.create_task_direct(supabase, payload, ctx)
+    return response(task)
+
+
 @router.patch("/{task_id}")
 def update_task(task_id: str, payload: TaskUpdate, ctx: RequestContext = Depends(require_module_permission("tasks", "edit"))):
     supabase = get_supabase_client(access_token=ctx.access_token)

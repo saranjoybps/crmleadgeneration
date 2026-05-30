@@ -7,6 +7,7 @@ import { apiRequest } from "@/lib/api-server";
 export async function createTask(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const ticketId = String(formData.get("ticket_id") ?? "").trim();
+  const projectId = String(formData.get("project_id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const priority = String(formData.get("priority") ?? "medium");
@@ -22,19 +23,29 @@ export async function createTask(formData: FormData) {
   const canCreate = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_create ?? false;
   if (!canCreate) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create tasks.")}`);
 
-  const { error } = await apiRequest("/api/v1/tasks/ticket/" + encodeURIComponent(ticketId), {
+  const body: Record<string, unknown> = { 
+    title, 
+    description: description || null, 
+    status: "open", 
+    priority, 
+    start_date: startDate || null,
+    due_date: dueDate || null, 
+    parent_task_id: parentTaskId || null, 
+    assignee_user_ids: assigneeIds,
+  };
+
+  let url: string;
+  if (ticketId) {
+    url = "/api/v1/tasks/ticket/" + encodeURIComponent(ticketId);
+  } else {
+    url = "/api/v1/tasks";
+    body.project_id = projectId || undefined;
+  }
+
+  const { error } = await apiRequest(url, {
     method: "POST",
     orgSlug,
-    body: { 
-      title, 
-      description: description || null, 
-      status: "open", 
-      priority, 
-      start_date: startDate || null,
-      due_date: dueDate || null, 
-      parent_task_id: parentTaskId || null, 
-      assignee_user_ids: assigneeIds 
-    },
+    body,
   });
 
   if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
@@ -181,7 +192,7 @@ export async function updateTaskStatus(orgSlug: string, taskId: string, newStatu
     cache: "no-store",
   });
   const canEdit = permsRes.data?.modules.find((m) => m.key === "tasks")?.permissions.can_edit ?? false;
-  if (!canEdit) { return; }
+  if (!canEdit) { throw new Error("Insufficient permissions to update task status."); }
   const { error } = await apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
     orgSlug,

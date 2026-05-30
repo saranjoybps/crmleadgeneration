@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { MessageSquare } from "lucide-react";
 import dynamic from "next/dynamic";
 
+import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
 
@@ -20,6 +21,18 @@ type PageProps = {
 export default async function ChatPage({ params }: PageProps) {
   const { orgSlug } = await params;
   const org = await getOrganizationContextOrRedirect(orgSlug);
+
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+
+  const chatPerm = permissionsResponse.data?.modules.find((m) => m.key === "chat")?.permissions ?? {
+    can_view: false, can_create: false, can_edit: false, can_delete: false,
+  };
+
+  if (!chatPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view chat.</p>;
+  }
 
   const supabase = await createClient();
   const {

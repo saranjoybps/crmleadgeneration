@@ -9,7 +9,7 @@ from app.services.auth import AuthService
 from app.services.rbac import RBACService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-logger = logging.getLogger("joycrm.auth")
+logger = logging.getLogger("joyerp.auth")
 
 
 @router.post("/signup")

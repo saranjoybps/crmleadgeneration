@@ -175,7 +175,7 @@ class ProjectService:
     def list_all_members(cls, supabase: Client, ctx: RequestContext):
         rows = (
             supabase.table("project_members")
-            .select("project_id,user_id,users(email,full_name)")
+            .select("project_id,user_id,users:users!project_members_user_id_fkey(email,full_name)")
             .eq("tenant_id", ctx.tenant_id)
             .eq("is_active", True)
             .execute()
@@ -190,7 +190,7 @@ class ProjectService:
         
         rows = (
             supabase.table("project_members")
-            .select("id,project_id,user_id,is_active,created_at,updated_at,users(email,full_name)")
+            .select("id,project_id,user_id,is_active,created_at,updated_at,users:users!project_members_user_id_fkey(email,full_name)")
             .eq("tenant_id", ctx.tenant_id)
             .eq("project_id", project_id)
             .eq("is_active", True)

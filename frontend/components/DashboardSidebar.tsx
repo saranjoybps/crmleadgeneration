@@ -135,7 +135,7 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
     <>
       {/* Mobile Header */}
       <div className="flex h-16 items-center justify-between border-b border-soft bg-white px-4 md:hidden">
-        <h2 className="text-xl font-bold tracking-tight text-violet-600">JOY CRM</h2>
+        <h2 className="text-xl font-bold tracking-tight text-violet-600">JOY ERP</h2>
         <button 
           onClick={() => setIsOpen(true)}
           className="rounded-lg p-2 text-muted hover:bg-slate-50"
@@ -159,7 +159,7 @@ export function DashboardSidebar({ email, basePath = "", organizationName, role,
       )}>
         <div className="flex h-20 items-center justify-between px-6">
           <div className="flex flex-col">
-            <h2 className="text-2xl font-bold tracking-tighter text-white">JOY CRM</h2>
+            <h2 className="text-2xl font-bold tracking-tighter text-white">JOY ERP</h2>
             <p className="-mt-0.5 text-[10px] font-medium tracking-wider text-indigo-400/60">v1.0.0</p>
           </div>
           <button 

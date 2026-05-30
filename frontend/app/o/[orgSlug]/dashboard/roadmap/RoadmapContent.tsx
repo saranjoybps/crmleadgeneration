@@ -161,13 +161,17 @@ export default function RoadmapContent({
                         {m.status}
                       </Badge>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {roadmapPermissions.can_edit && (
                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => setModal({ type: "edit_milestone", milestone_id: m.id })}>
-                           <Edit className="h-3.5 w-3.5 text-muted" />
-                         </Button>
+                            <Edit className="h-3.5 w-3.5 text-muted" />
+                          </Button>
+                        )}
+                        {roadmapPermissions.can_delete && (
                          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-red-500 hover:bg-red-50" onClick={() => setModal({ type: "delete_milestone", milestone_id: m.id })}>
-                           <Trash2 className="h-3.5 w-3.5" />
-                         </Button>
-                      </div>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                       </div>
                     </div>
                   </div>
                 </div>

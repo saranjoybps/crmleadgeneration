@@ -36,7 +36,7 @@ interface Task {
   status: string;
   priority: "low" | "medium" | "high" | "urgent";
   due_date?: string;
-  ticket_id: string;
+  ticket_id?: string;
   project_id: string;
   task_assignees?: Array<{
     user_id: string;
@@ -314,7 +314,7 @@ const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, canDelete, t
       type: "Task",
       task,
     },
-    disabled: !canManage && task.status === "closed",
+    disabled: !canManage,
   });
 
   const style = {
@@ -393,7 +393,7 @@ const TaskCard = memo(function TaskCard({ task, orgSlug, canManage, canDelete, t
       <div className="mt-4 flex items-center justify-between border-t border-soft/50 pt-3">
         <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-[10px] font-medium text-muted">
           <Ticket className="h-3 w-3" />
-          <span className="truncate max-w-[100px]">{ticketTitleById.get(task.ticket_id) || "General"}</span>
+          <span className="truncate max-w-[100px]">{task.ticket_id ? (ticketTitleById.get(task.ticket_id) || "Unknown") : "No ticket"}</span>
         </div>
         
         <div className="flex -space-x-1.5">

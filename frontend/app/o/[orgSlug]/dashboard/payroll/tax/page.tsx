@@ -14,10 +14,10 @@ export default async function PayrollTaxPage({ params, searchParams }: TaxPagePr
   await getOrganizationContextOrRedirect(orgSlug);
 
   const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_delete: boolean } }>;
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
   }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
   const payrollPerm = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions ?? {
-    can_view: false, can_create: false, can_delete: false,
+    can_view: false, can_create: false, can_edit: false, can_delete: false,
   };
   if (!payrollPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view payroll.</p>;

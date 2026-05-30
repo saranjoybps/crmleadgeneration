@@ -6,7 +6,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-app = FastAPI(title="Joy CRM API", version="2.0.0")
+app = FastAPI(title="Joy ERP API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,

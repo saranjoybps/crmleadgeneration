@@ -5,7 +5,7 @@ import logging
 from app.core.deps import RequestContext
 from app.schemas.rbac import RoleCreate, RoleUpdate, ModuleCreate, PermissionUpdate
 
-logger = logging.getLogger("joycrm.rbac")
+logger = logging.getLogger("joyerp.rbac")
 
 
 class RBACService:

@@ -21,6 +21,18 @@ export default async function DashboardPage({ params }: PageProps) {
   const { orgSlug } = await params;
   const org = await getOrganizationContextOrRedirect(orgSlug);
 
+  const permissionsResponse = await apiRequest<{
+    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
+  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+
+  const dashboardPerm = permissionsResponse.data?.modules.find((m) => m.key === "dashboard")?.permissions ?? {
+    can_view: false, can_create: false, can_edit: false, can_delete: false,
+  };
+
+  if (!dashboardPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view the dashboard.</p>;
+  }
+
   const { data: summary } = await apiRequest<DashboardSummary>("/api/v1/dashboard/summary", { orgSlug });
 
   const statCards = [

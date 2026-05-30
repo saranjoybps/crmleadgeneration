@@ -22,8 +22,13 @@ export default async function DocumentTypesPage({ params, searchParams }: Docume
   ]);
 
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;
+  const canView = docPerm?.can_view ?? false;
   const canCreate = docPerm?.can_create ?? false;
   const canDelete = docPerm?.can_delete ?? false;
+
+  if (!canView) {
+    return <p className="p-6 text-red-600">You do not have permission to view document types.</p>;
+  }
 
   const types = typesRes.data ?? [];
   const baseUrl = `/o/${orgSlug}/dashboard/documents/types`;

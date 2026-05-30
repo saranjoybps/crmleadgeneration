@@ -24,7 +24,7 @@ export async function createTodo(formData: FormData) {
     body: { 
       title, 
       description: description || null, 
-      due_date: dueDate ? new Date(dueDate).toISOString() : null 
+      due_date: dueDate ? dueDate + "T00:00:00Z" : null 
     },
   });
 
@@ -54,7 +54,7 @@ export async function updateTodo(formData: FormData) {
     body: { 
       title: title || undefined, 
       description: description || null, 
-      due_date: dueDate ? new Date(dueDate).toISOString() : null,
+      due_date: dueDate ? dueDate + "T00:00:00Z" : null,
       is_completed: isCompleted
     },
   });
@@ -68,12 +68,13 @@ export async function toggleTodo(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const todoId = String(formData.get("todo_id") ?? "").trim();
   const currentStatus = formData.get("is_completed") === "true";
+  const path = `/o/${orgSlug}/dashboard/todos`;
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>("/api/v1/auth/permissions", {
     orgSlug,
     cache: "no-store",
   });
   const canEdit = permsRes.data?.modules.find((m) => m.key === "todos")?.permissions.can_edit ?? false;
-  if (!canEdit) return;
+  if (!canEdit) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to update todos.")}`);
   const { error } = await apiRequest(`/api/v1/todos/${encodeURIComponent(todoId)}`, {
     method: "PATCH",
     orgSlug,

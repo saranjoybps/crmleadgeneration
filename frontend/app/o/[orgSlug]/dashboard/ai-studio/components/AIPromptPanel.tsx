@@ -49,7 +49,7 @@ export default function AIPromptPanel({ onGenerated, className }: AIPromptPanelP
       }
       case "tagline":
         await new Promise((r) => setTimeout(r, 800));
-        result = `"${prompt}" – Empowering Your Business with JOY CRM`;
+        result = `"${prompt}" – Empowering Your Business with JOY ERP`;
         break;
       default:
         result = await simulateAI();

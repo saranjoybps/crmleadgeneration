@@ -23,6 +23,7 @@ export interface RoadmapTask {
   progress: number;
   priority: Task["priority"];
   originalStatus: Task["status"];
+  projectId: string;
   dependsOn: string[];
   isBlocking: string[];
   slackDays: number;
@@ -233,6 +234,7 @@ export function transformRoadmapData({
       progress,
       priority: tsk.priority,
       originalStatus: tsk.status,
+      projectId: tsk.project_id,
       dependsOn: taskDependencies.get(tsk.id) || [],
       isBlocking: reverseDependencies.get(tsk.id) || [],
       slackDays: 0,
@@ -630,12 +632,11 @@ export function transformRoadmapData({
   });
 
   transformedTasks.forEach((tsk) => {
-    if (!tsk.id.includes("orphan")) {
+    if (!tsk.id.includes("orphan") && tsk.projectId) {
       const hasTicket = taskToTicket.has(tsk.id);
       if (!hasTicket) {
-        for (const project of projectMap.values()) {
-          project.tasksWithoutTicket.push(tsk);
-        }
+        const project = projectMap.get(tsk.projectId);
+        if (project) project.tasksWithoutTicket.push(tsk);
       }
     }
   });

@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
-import { Task, Ticket } from "@/lib/types";
+import { Task, Ticket, Milestone } from "@/lib/types";
 import CalendarContent from "./CalendarContent";
 
 export default async function CalendarPage({ params }: {
@@ -23,12 +23,14 @@ export default async function CalendarPage({ params }: {
 
   const { data: tasks } = await apiRequest<Task[]>(`/api/v1/tasks`, { orgSlug });
   const { data: tickets } = await apiRequest<Ticket[]>(`/api/v1/tickets`, { orgSlug });
+  const { data: milestones } = await apiRequest<Milestone[]>(`/api/v1/milestones`, { orgSlug });
 
   return (
     <CalendarContent
       orgSlug={orgSlug}
       tasks={tasks ?? []}
       tickets={tickets ?? []}
+      milestones={milestones ?? []}
     />
   );
 }

@@ -150,6 +150,71 @@ class TaskService:
         return row
 
     @staticmethod
+    def create_task_direct(supabase: Client, payload: TaskCreate, ctx: RequestContext):
+        project_id = payload.project_id
+        if not project_id:
+            raise HTTPException(status_code=400, detail="project_id is required when creating a task without a ticket")
+
+        allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
+        if allowed_project_ids is not None and project_id not in allowed_project_ids:
+            raise HTTPException(status_code=403, detail="Forbidden for this project")
+
+        project = (
+            supabase.table("projects")
+            .select("id")
+            .eq("id", project_id)
+            .eq("tenant_id", ctx.tenant_id)
+            .maybe_single()
+            .execute()
+        )
+        if not project.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        try:
+            insert_data = {
+                "tenant_id": ctx.tenant_id,
+                "project_id": project_id,
+                "ticket_id": None,
+                "title": payload.title,
+                "description": payload.description,
+                "start_date": getattr(payload, "start_date", None),
+                "due_date": getattr(payload, "due_date", None),
+                "priority": getattr(payload, "priority", "medium"),
+                "parent_task_id": getattr(payload, "parent_task_id", None),
+                "status": payload.status or "open",
+                "created_by": ctx.app_user_id,
+            }
+            
+            created = (
+                supabase.table("tasks")
+                .insert(insert_data)
+                .execute()
+            )
+        except APIError as exc:
+            raise HTTPException(status_code=400, detail=f"Database error: {exc.message}")
+
+        row = (created.data or [None])[0]
+        if not row:
+            raise HTTPException(status_code=500, detail="Failed to create task")
+
+        assignee_ids = set(payload.assignee_user_ids or [])
+        if assignee_ids:
+            assignments = [
+                {
+                    "tenant_id": ctx.tenant_id,
+                    "task_id": row["id"],
+                    "user_id": user_id,
+                }
+                for user_id in assignee_ids
+            ]
+            supabase.table("task_assignees").upsert(
+                assignments,
+                on_conflict="task_id,user_id",
+            ).execute()
+        
+        return row
+
+    @staticmethod
     def update_task(supabase: Client, task_id: str, payload: TaskUpdate, ctx: RequestContext):
         allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
         if allowed_project_ids is not None:
@@ -180,11 +245,10 @@ class TaskService:
                 raise HTTPException(status_code=403, detail="Forbidden")
         
         try:
-            # Explicitly extract fields to ensure they are updated even if 
-            # they aren't fully mapped in the Pydantic TaskUpdate schema.
             update_data = payload.model_dump(exclude_unset=True)
             
-            # Force priority and due_date if they exist in the payload
+            if "priority" in update_data:
+                pass
             priority_val = getattr(payload, "priority", None)
             if priority_val:
                 update_data["priority"] = priority_val
@@ -196,6 +260,24 @@ class TaskService:
             start_date_val = getattr(payload, "start_date", "missing_attr")
             if start_date_val != "missing_attr":
                 update_data["start_date"] = start_date_val
+
+            # Handle ticket_id change — if provided, look up the ticket and sync project_id
+            if "ticket_id" in update_data:
+                new_ticket_id = update_data["ticket_id"]
+                if new_ticket_id is not None:
+                    ticket_row = (
+                        supabase.table("tickets")
+                        .select("project_id")
+                        .eq("id", new_ticket_id)
+                        .eq("tenant_id", ctx.tenant_id)
+                        .maybe_single()
+                        .execute()
+                    )
+                    if not ticket_row.data:
+                        raise HTTPException(status_code=404, detail="Ticket not found")
+                    update_data["project_id"] = ticket_row.data["project_id"]
+                else:
+                    update_data["ticket_id"] = None
 
             updated = (
                 supabase.table("tasks")

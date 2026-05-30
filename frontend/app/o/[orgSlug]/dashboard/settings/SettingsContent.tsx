@@ -225,7 +225,7 @@ export default function SettingsContent({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-8 p-6 rounded-3xl bg-slate-50 border border-soft">
                   <div>
                     <h3 className="text-lg font-black text-main">Theme Mode</h3>
-                    <p className="text-sm font-medium text-muted mt-1">Choose how JOY CRM looks on your device.</p>
+                    <p className="text-sm font-medium text-muted mt-1">Choose how JOY ERP looks on your device.</p>
                   </div>
                   <ThemePreference />
                 </div>
