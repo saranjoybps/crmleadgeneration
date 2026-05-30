@@ -245,3 +245,27 @@ class UserService:
                 logger.warning("Auth metadata update failed for %s: %s", auth_user_id, exc)
 
         return (res.data or [None])[0]
+
+    @classmethod
+    def remove_member(cls, supabase: Client, membership_id: str, ctx: RequestContext):
+        membership = (
+            supabase.table("user_tenant_roles")
+            .select("id, user_id")
+            .eq("id", membership_id)
+            .eq("tenant_id", ctx.tenant_id)
+            .maybe_single()
+            .execute()
+        ).data
+        if not membership:
+            raise HTTPException(status_code=404, detail="Membership not found")
+        result = (
+            supabase.table("user_tenant_roles")
+            .update({"is_active": False})
+            .eq("id", membership_id)
+            .eq("tenant_id", ctx.tenant_id)
+            .execute()
+        )
+        row = (result.data or [None])[0]
+        if not row:
+            raise HTTPException(status_code=500, detail="Failed to deactivate membership")
+        return row

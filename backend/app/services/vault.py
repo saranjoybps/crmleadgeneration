@@ -92,12 +92,13 @@ class VaultService:
                 )
             ]
             if shared_ids:
-                query = query.or_(f"created_by.eq.{ctx.app_user_id},id.in.(%s)" % ",".join(shared_ids))
+                query = query.or_(f"created_by.eq.{ctx.app_user_id},id.in.{','.join(shared_ids)}")
             else:
                 query = query.eq("created_by", ctx.app_user_id)
 
         if q:
-            query = query.or_(f"label.ilike.%{q}%,username.ilike.%{q}%,email_id.ilike.%{q}%,login_url.ilike.%{q}%")
+            escaped_q = q.replace("%", "\\%").replace("_", "\\_")
+            query = query.or_(f"label.ilike.%{escaped_q}%,username.ilike.%{escaped_q}%,email_id.ilike.%{escaped_q}%,login_url.ilike.%{escaped_q}%")
         if category:
             query = query.eq("category", category)
         if status:

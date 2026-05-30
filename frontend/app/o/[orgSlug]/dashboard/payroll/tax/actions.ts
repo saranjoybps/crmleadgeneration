@@ -18,10 +18,10 @@ export async function createSlabAction(formData: FormData) {
 
   const body: Record<string, unknown> = {
     financial_year: formData.get("financial_year"),
-    from_amount: Number(formData.get("from_amount")),
+    from_amount: Number(formData.get("from_amount")) || 0,
     to_amount: formData.get("to_amount") ? Number(formData.get("to_amount")) : null,
-    tax_rate: Number(formData.get("tax_rate")),
-    additional_cess: Number(formData.get("additional_cess")),
+    tax_rate: Number(formData.get("tax_rate")) || 0,
+    additional_cess: Number(formData.get("additional_cess")) || 0,
     is_active: formData.get("is_active") === "on",
   };
 

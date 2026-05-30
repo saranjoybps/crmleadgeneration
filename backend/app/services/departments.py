@@ -2,6 +2,8 @@ import logging
 import uuid
 from typing import Optional
 
+from fastapi import HTTPException
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from app.core.deps import RequestContext
@@ -28,9 +30,9 @@ class DepartmentService:
             if response.data:
                 return response.data[0]
             raise Exception("Failed to create department")
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error creating department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to create department")
 
     @staticmethod
     def list_departments(supabase: Client, ctx: RequestContext, limit: int = 100, offset: int = 0) -> list[dict]:
@@ -48,9 +50,9 @@ class DepartmentService:
                 query = query.in_("id", list(allowed_department_ids))
             response = query.range(offset, offset + limit - 1).execute()
             return response.data or []
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error listing departments: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to list departments")
 
     @staticmethod
     def get_department(supabase: Client, ctx: RequestContext, dept_id: str) -> Optional[dict]:
@@ -62,9 +64,9 @@ class DepartmentService:
                 .single()\
                 .execute()
             return response.data
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error getting department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to get department")
 
     @staticmethod
     def get_department_with_members(supabase: Client, ctx: RequestContext, dept_id: str) -> Optional[dict]:
@@ -99,9 +101,9 @@ class DepartmentService:
             dept["members"] = members
             dept["member_count"] = len(members)
             return dept
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error getting department with members: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to get department details")
 
     @staticmethod
     def update_department(supabase: Client, ctx: RequestContext, dept_id: str,
@@ -126,9 +128,9 @@ class DepartmentService:
                 .eq("tenant_id", ctx.tenant_id)\
                 .execute()
             return response.data[0] if response.data else None
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error updating department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to update department")
 
     @staticmethod
     def delete_department(supabase: Client, ctx: RequestContext, dept_id: str) -> bool:
@@ -139,9 +141,9 @@ class DepartmentService:
                 .eq("tenant_id", ctx.tenant_id)\
                 .execute()
             return len(response.data or []) > 0
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error deleting department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to delete department")
 
     @staticmethod
     def add_user_to_department(supabase: Client, ctx: RequestContext, user_id: str, dept_id: str) -> dict:
@@ -150,9 +152,9 @@ class DepartmentService:
                 .upsert({"user_id": user_id, "department_id": dept_id})\
                 .execute()
             return response.data[0] if response.data else {}
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error adding user to department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to add user to department")
 
     @staticmethod
     def remove_user_from_department(supabase: Client, ctx: RequestContext, user_id: str, dept_id: str) -> bool:
@@ -163,9 +165,9 @@ class DepartmentService:
                 .eq("department_id", dept_id)\
                 .execute()
             return len(response.data or []) > 0
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error removing user from department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to remove user from department")
 
     @staticmethod
     def list_department_members(supabase: Client, ctx: RequestContext, dept_id: str,
@@ -190,9 +192,9 @@ class DepartmentService:
                     "joined_at": member.get("created_at"),
                 })
             return members
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error listing department members: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to list department members")
 
     @staticmethod
     def get_user_department(supabase: Client, ctx: RequestContext, user_id: str) -> Optional[dict]:
@@ -211,6 +213,6 @@ class DepartmentService:
                         "department_slug": dept.get("slug"),
                     }
             return None
-        except Exception as e:
+        except APIError as e:
             logger.error(f"Error getting user department: {e}")
-            raise
+            raise HTTPException(status_code=500, detail="Failed to get user department")

@@ -33,3 +33,13 @@ def update_user(user_id: str, payload: UserUpdate, ctx: RequestContext = Depends
     supabase = get_supabase_client(access_token=ctx.access_token)
     user = UserService.update_user(supabase, user_id, payload, ctx)
     return response(user)
+
+
+@router.delete("/{membership_id}")
+def remove_member(
+    membership_id: str,
+    ctx: RequestContext = Depends(require_module_permission("users", "delete")),
+):
+    supabase = get_supabase_client(access_token=ctx.access_token)
+    result = UserService.remove_member(supabase, membership_id, ctx)
+    return response(result)

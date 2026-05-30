@@ -6,6 +6,7 @@ export type OrganizationContext = {
   organization_slug: string;
   organization_name: string;
   role: AppRole;
+  departments: { id: string; name: string }[];
 };
 
 export type User = {
@@ -479,6 +480,48 @@ export type TaxSlab = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type AssetStatus = "available" | "assigned" | "maintenance" | "retired";
+export type AssetType = "laptop" | "id_card" | "gift" | "other";
+export type AssignmentStatus = "active" | "returned";
+
+export type Asset = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  asset_type: AssetType;
+  asset_tag: string;
+  serial_number: string | null;
+  brand: string | null;
+  model: string | null;
+  purchase_date: string | null;
+  purchase_price: number | null;
+  status: AssetStatus;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssetAssignment = {
+  id: string;
+  tenant_id: string;
+  asset_id: string | null;
+  user_id: string;
+  assigned_by: string;
+  is_own_device: boolean;
+  assignment_date: string;
+  expected_return_date: string | null;
+  actual_return_date: string | null;
+  return_condition: string | null;
+  status: AssignmentStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  asset?: Asset | null;
+  assigned_to?: Partial<User> | null;
+  assigned_by_user?: Partial<User> | null;
 };
 
 export type PayrollSummary = {

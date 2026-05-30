@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -260,17 +261,22 @@ class DocumentsService:
         return full_html
 
     @staticmethod
-    def download_pdf(supabase: Client, doc_id: str, ctx: RequestContext):
-        doc = DocumentsService.get_generated_document(supabase, doc_id, ctx)
-        template = DocumentsService.get_template(supabase, str(doc["template_id"]), ctx)
-        rendered_html = DocumentsService._render_template(template["content"], doc["content_data"])
-        full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
+    def _render_pdf_sync(full_html: str) -> bytes:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_content(full_html, wait_until="networkidle")
             pdf_bytes = page.pdf(format='A4', margin={'top': '20mm', 'bottom': '20mm', 'left': '20mm', 'right': '20mm'})
             browser.close()
+        return pdf_bytes
+
+    @staticmethod
+    async def download_pdf(supabase: Client, doc_id: str, ctx: RequestContext):
+        doc = DocumentsService.get_generated_document(supabase, doc_id, ctx)
+        template = DocumentsService.get_template(supabase, str(doc["template_id"]), ctx)
+        rendered_html = DocumentsService._render_template(template["content"], doc["content_data"])
+        full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
+        pdf_bytes = await asyncio.to_thread(DocumentsService._render_pdf_sync, full_html)
         return BytesIO(pdf_bytes), f"{doc['title']}.pdf"
 
     @staticmethod

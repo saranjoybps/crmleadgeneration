@@ -99,19 +99,20 @@ class PayrollService:
     def list_employee_salaries(supabase: Client, ctx: RequestContext, status: str | None = None):
         rows = PayrollService._fetch(supabase, ctx, "employee_salaries",
                                      status=status, order=[("effective_from", "desc")])
+        user_ids = [r["user_id"] for r in rows if r.get("user_id")]
+        user_map = {}
+        if user_ids:
+            users = supabase.table("users").select("id, email, full_name").in_("id", list(set(user_ids))).execute()
+            user_map = {u["id"]: u for u in (users.data or [])}
+        salary_ids = [r["id"] for r in rows if r.get("id")]
+        comp_map = {}
+        if salary_ids:
+            comps = supabase.table("employee_salary_components").select("*, component:component_id(*)").in_("employee_salary_id", salary_ids).execute()
+            for comp in (comps.data or []):
+                comp_map.setdefault(comp["employee_salary_id"], []).append(comp)
         for r in rows:
-            if r.get("user_id"):
-                u = supabase.table("users").select("id, email, full_name").eq("id", r["user_id"]).single().execute()
-                if u.data:
-                    r["user"] = u.data
-            comps = (
-                supabase.table("employee_salary_components")
-                .select("*, component:component_id(*)")
-                .eq("tenant_id", ctx.tenant_id)
-                .eq("employee_salary_id", r["id"])
-                .execute()
-            )
-            r["components"] = comps.data or []
+            r["user"] = user_map.get(r.get("user_id"))
+            r["components"] = comp_map.get(r["id"], [])
         return rows
 
     @staticmethod

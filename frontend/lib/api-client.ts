@@ -10,6 +10,7 @@ export async function getApiContext(orgSlug?: string) {
   const supabase = createClient();
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
   
+  const { data: { user } } = await supabase.auth.getUser();
   const { data: { session } } = await supabase.auth.getSession();
   const accessToken = session?.access_token;
 
@@ -35,13 +36,16 @@ export async function apiRequest<T>(
     body?: any;
     orgSlug?: string;
     cache?: RequestCache;
+    headers?: Record<string, string>;
   } = {}
 ): Promise<ApiResponse<T>> {
-  const { apiBase, headers } = await getApiContext(options.orgSlug);
+  const { apiBase, headers: baseHeaders } = await getApiContext(options.orgSlug);
 
   if (!apiBase) {
     return { data: null, error: "API base URL not configured." };
   }
+
+  const headers = { ...baseHeaders, ...options.headers };
 
   try {
     const resp = await fetch(`${apiBase}${path}`, {

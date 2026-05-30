@@ -84,8 +84,8 @@ export async function createComponentAction(formData: FormData) {
     name: formData.get("name"),
     type: formData.get("type"),
     calculation_type: formData.get("calculation_type"),
-    default_value: Number(formData.get("default_value")),
-    sort_order: Number(formData.get("sort_order")),
+    default_value: Number(formData.get("default_value")) || 0,
+    sort_order: Number(formData.get("sort_order")) || 0,
     is_active: true,
   };
 

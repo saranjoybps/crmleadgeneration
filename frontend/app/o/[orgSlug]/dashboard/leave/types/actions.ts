@@ -8,6 +8,14 @@ export async function createTypeAction(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/leave/types`;
 
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "leave")?.permissions.can_create ?? false;
+  if (!canCreate) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create leave types.")}`);
+  }
+
   const { error } = await apiRequest("/api/v1/leave-types", {
     method: "POST",
     orgSlug,
@@ -32,6 +40,14 @@ export async function updateTypeAction(formData: FormData) {
   const typeId = String(formData.get("type_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/leave/types`;
 
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "leave")?.permissions.can_edit ?? false;
+  if (!canEdit) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to update leave types.")}`);
+  }
+
   const { error } = await apiRequest(`/api/v1/leave-types/${encodeURIComponent(typeId)}`, {
     method: "PATCH",
     orgSlug,
@@ -55,6 +71,14 @@ export async function deleteTypeAction(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const typeId = String(formData.get("type_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/leave/types`;
+
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canDelete = permsRes.data?.modules.find((m) => m.key === "leave")?.permissions.can_delete ?? false;
+  if (!canDelete) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete leave types.")}`);
+  }
 
   const { error } = await apiRequest(`/api/v1/leave-types/${encodeURIComponent(typeId)}`, {
     method: "DELETE",

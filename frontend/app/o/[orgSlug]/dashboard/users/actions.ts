@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
 
-import { createClient } from "@/lib/supabase/server";
 import { apiRequest } from "@/lib/api-server";
 
 export async function createUserDirect(formData: FormData) {
@@ -85,7 +84,6 @@ export async function removeMember(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const membershipId = String(formData.get("member_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/users`;
-  const supabase = await createClient();
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>("/api/v1/auth/permissions", {
     orgSlug,
     cache: "no-store",
@@ -93,8 +91,11 @@ export async function removeMember(formData: FormData) {
   const canDeleteUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_delete ?? false;
   if (!canDeleteUsers) redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to remove users.")}`);
 
-  const { error } = await supabase.from("user_tenant_roles").update({ is_active: false }).eq("id", membershipId);
-  if (error) redirect(`${path}?error=${encodeURIComponent(error.message)}`);
+  const { error } = await apiRequest(`/api/v1/users/${encodeURIComponent(membershipId)}`, {
+    method: "DELETE",
+    orgSlug,
+  });
+  if (error) redirect(`${path}?error=${encodeURIComponent(error)}`);
   revalidatePath(path);
   redirect(`${path}?success=${encodeURIComponent("Member removed.")}`);
 }

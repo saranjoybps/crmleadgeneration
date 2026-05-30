@@ -269,9 +269,10 @@ class LeaveService:
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create leave request")
 
-        supabase.table("leave_balances").update({
-            "pending_days": float(bal["pending_days"]) + duration_days,
-        }).eq("id", bal["id"]).execute()
+        supabase.rpc("update_leave_balance", {
+            "p_balance_id": bal["id"],
+            "p_pending_delta": duration_days,
+        }).execute()
 
         return row
 

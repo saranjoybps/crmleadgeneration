@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
+import { apiRequest } from "@/lib/api-client";
 import { createCredential, updateCredential, deleteCredential, updateShare } from "./actions";
 
 export type CredentialRow = {
@@ -102,11 +103,11 @@ export default function VaultContent({
       return;
     }
     try {
-      const res = await fetch(`/api/v1/vault/${encodeURIComponent(detailCredential.id)}`, {
-        headers: { "X-Reveal-Password": "true" },
-      });
-      const json = await res.json();
-      setRevealedPassword(json.data?.password || null);
+      const res = await apiRequest<{ password?: string }>(
+        `/api/v1/vault/${encodeURIComponent(detailCredential.id)}`,
+        { orgSlug, headers: { "X-Reveal-Password": "true" } },
+      );
+      setRevealedPassword(res.data?.password ?? null);
       setReveal(true);
     } catch {
       // silent

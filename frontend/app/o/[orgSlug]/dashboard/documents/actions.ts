@@ -90,6 +90,14 @@ export async function createType(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/documents/types`;
 
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "documents")?.permissions.can_create ?? false;
+  if (!canCreate) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create document types.")}`);
+  }
+
   const { error } = await apiRequest("/api/v1/document-types", {
     method: "POST",
     orgSlug,
@@ -106,6 +114,14 @@ export async function deleteType(formData: FormData) {
   const orgSlug = String(formData.get("organization_slug") ?? "").trim();
   const typeId = String(formData.get("type_id") ?? "").trim();
   const path = `/o/${orgSlug}/dashboard/documents/types`;
+
+  const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>(
+    "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
+  );
+  const canDelete = permsRes.data?.modules.find((m) => m.key === "documents")?.permissions.can_delete ?? false;
+  if (!canDelete) {
+    redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete document types.")}`);
+  }
 
   const { error } = await apiRequest(`/api/v1/document-types/${typeId}`, {
     method: "DELETE",

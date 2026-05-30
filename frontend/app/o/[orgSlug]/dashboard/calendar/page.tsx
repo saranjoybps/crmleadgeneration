@@ -21,18 +21,12 @@ export default async function CalendarPage({ params }: {
     return <p className="p-6 text-red-600">You do not have permission to view calendar.</p>;
   }
 
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-
   const { data: tasks } = await apiRequest<Task[]>(`/api/v1/tasks`, { orgSlug });
   const { data: tickets } = await apiRequest<Ticket[]>(`/api/v1/tickets`, { orgSlug });
 
   return (
     <CalendarContent
       orgSlug={orgSlug}
-      initialMonth={currentMonth}
-      initialYear={currentYear}
       tasks={tasks ?? []}
       tickets={tickets ?? []}
     />

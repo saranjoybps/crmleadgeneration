@@ -59,12 +59,19 @@ export async function updateSession(request: NextRequest) {
   if (user && (isAuthPath || pathname === "/dashboard" || pathname.startsWith("/dashboard/"))) {
     // Check for cached tenant slug in cookie to avoid RPC call
     let slug: string | undefined | null = request.cookies.get("tenant_slug")?.value;
+    if (slug) {
+      // Verify cached slug is still valid for this user
+      const { data, error } = await supabase.rpc("ensure_user_tenant", { p_tenant_slug: slug });
+      if (error || !Array.isArray(data) || data.length === 0 || String(data[0].tenant_slug ?? "") !== slug) {
+        slug = null;
+        response.cookies.set("tenant_slug", "", { maxAge: 0, path: "/" });
+      }
+    }
     if (!slug) {
       slug = await resolveTenantSlug(supabase);
       if (slug) {
-        // Cache tenant slug in cookie for 1 hour
         response.cookies.set("tenant_slug", slug, {
-          maxAge: 3600,
+          maxAge: 300,
           path: "/",
           httpOnly: true,
           sameSite: "lax",

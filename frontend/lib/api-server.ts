@@ -11,6 +11,7 @@ export type ApiResponse<T> = {
 export async function getApiContext(orgSlug?: string) {
   const supabase = await createClient();
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const { data: { user } } = await supabase.auth.getUser();
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
 

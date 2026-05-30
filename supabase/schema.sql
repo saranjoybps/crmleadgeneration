@@ -108,10 +108,30 @@ end $$;
 
 do $$ begin
   alter type public.attendance_status add value if not exists 'present';
+exception
+  when duplicate_object then null;
+end $$;
+do $$ begin
   alter type public.attendance_status add value if not exists 'late';
+exception
+  when duplicate_object then null;
+end $$;
+do $$ begin
   alter type public.attendance_status add value if not exists 'half_day';
+exception
+  when duplicate_object then null;
+end $$;
+do $$ begin
   alter type public.attendance_status add value if not exists 'absent';
+exception
+  when duplicate_object then null;
+end $$;
+do $$ begin
   alter type public.attendance_status add value if not exists 'overtime';
+exception
+  when duplicate_object then null;
+end $$;
+do $$ begin
   alter type public.attendance_status add value if not exists 'on_leave';
 exception
   when duplicate_object then null;
@@ -434,20 +454,6 @@ begin
   end if;
 end $$;
 
-create table if not exists public.milestones (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  project_id uuid not null references public.projects(id) on delete cascade,
-  name text not null,
-  description text null,
-  due_date timestamptz not null,
-  status text not null default 'pending',
-  created_by uuid null references public.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint milestones_status_valid check (status in ('pending', 'completed', 'cancelled'))
-);
-
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -466,6 +472,20 @@ do $$ begin
     alter table public.projects add column department_id uuid null references public.departments(id) on delete set null;
   end if;
 end $$;
+
+create table if not exists public.milestones (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  name text not null,
+  description text null,
+  due_date timestamptz not null,
+  status text not null default 'pending',
+  created_by uuid null references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint milestones_status_valid check (status in ('pending', 'completed', 'cancelled'))
+);
 
 create table if not exists public.project_members (
   id uuid primary key default gen_random_uuid(),
@@ -684,7 +704,7 @@ create table if not exists public.leave_requests (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
-  leave_type_id uuid not null references public.leave_types(id),
+  leave_type_id uuid not null references public.leave_types(id) on delete cascade,
   start_date date not null,
   end_date date not null,
   duration_days numeric(3,1) not null,
@@ -718,7 +738,7 @@ create table if not exists public.candidates (
   resume_url text null,
   status candidate_status not null default 'applied',
   notes text null,
-  created_by uuid not null references public.users(id) on delete set null,
+  created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -729,7 +749,7 @@ create table if not exists public.candidate_status_log (
   candidate_id uuid not null references public.candidates(id) on delete cascade,
   from_status candidate_status null,
   to_status candidate_status not null,
-  changed_by uuid not null references public.users(id) on delete set null,
+  changed_by uuid null references public.users(id) on delete set null,
   note text null,
   created_at timestamptz not null default now()
 );
@@ -738,7 +758,7 @@ create table if not exists public.interviews (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   candidate_id uuid not null references public.candidates(id) on delete cascade,
-  interviewer_id uuid not null references public.users(id) on delete set null,
+  interviewer_id uuid null references public.users(id) on delete set null,
   scheduled_at timestamptz not null,
   duration_minutes int not null default 60,
   interview_type interview_type not null default 'screening',
@@ -747,7 +767,7 @@ create table if not exists public.interviews (
   feedback text null,
   rating int null check (rating >= 1 and rating <= 5),
   notes text null,
-  created_by uuid not null references public.users(id) on delete set null,
+  created_by uuid null references public.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -1180,8 +1200,7 @@ begin
     join public.roles r on r.id = utr.role_id
     left join public.user_departments ud on ud.user_id = utr.user_id
     left join public.departments d on d.id = ud.department_id and d.tenant_id = t.id
-    where utr.user_id = v_app_user_id and utr.is_active = true and t.slug = p_tenant_slug
-    limit 1;
+    where utr.user_id = v_app_user_id and utr.is_active = true and t.slug = p_tenant_slug;
     if found then
       return;
     end if;
@@ -1201,8 +1220,7 @@ begin
   left join public.user_departments ud on ud.user_id = utr.user_id
   left join public.departments d on d.id = ud.department_id and d.tenant_id = t.id
   where utr.user_id = v_app_user_id and utr.is_active = true
-  order by utr.created_at asc
-  limit 1;
+  order by utr.created_at asc;
 
   if found then
     return;
@@ -2657,21 +2675,27 @@ create table if not exists public.generated_documents (
 alter table public.document_templates add column if not exists updated_at timestamptz not null default now();
 alter table public.generated_documents add column if not exists updated_at timestamptz not null default now();
 
--- Seed global document types
-insert into public.document_types (tenant_id, name, key) values
-  (null, 'Offer Letter', 'offer_letter'),
-  (null, 'Appointment Letter', 'appointment_letter'),
-  (null, 'Payslip', 'payslip'),
-  (null, 'Experience Letter', 'experience_letter'),
-  (null, 'Relieving Letter', 'relieving_letter'),
-  (null, 'Promotion Letter', 'promotion_letter'),
-  (null, 'Increment Letter', 'increment_letter'),
-  (null, 'NDA / Agreement', 'nda'),
-  (null, 'ID Proof', 'id_proof'),
-  (null, 'Certificate', 'certificate'),
-  (null, 'PF/ESI Document', 'pf_esi'),
-  (null, 'Tax Document', 'tax_document')
-on conflict (tenant_id, key) do nothing;
+-- Seed global document types (uses WHERE NOT EXISTS because NULL != NULL in unique constraints)
+insert into public.document_types (tenant_id, name, key)
+select v.tenant_id, v.name, v.key
+from (values
+  (null::uuid, 'Offer Letter'::text, 'offer_letter'::text),
+  (null,       'Appointment Letter',   'appointment_letter'),
+  (null,       'Payslip',              'payslip'),
+  (null,       'Experience Letter',    'experience_letter'),
+  (null,       'Relieving Letter',     'relieving_letter'),
+  (null,       'Promotion Letter',     'promotion_letter'),
+  (null,       'Increment Letter',     'increment_letter'),
+  (null,       'NDA / Agreement',      'nda'),
+  (null,       'ID Proof',             'id_proof'),
+  (null,       'Certificate',          'certificate'),
+  (null,       'PF/ESI Document',      'pf_esi'),
+  (null,       'Tax Document',         'tax_document')
+) as v(tenant_id, name, key)
+where not exists (
+  select 1 from public.document_types dt
+  where dt.key = v.key and dt.tenant_id is null
+);
 
 -- Documents RLS
 alter table public.document_types enable row level security;
@@ -2731,6 +2755,111 @@ for each row execute function public.touch_updated_at();
 
 drop trigger if exists trg_generated_documents_updated_at on public.generated_documents;
 create trigger trg_generated_documents_updated_at before update on public.generated_documents
+for each row execute function public.touch_updated_at();
+
+-- ----------
+-- Assets Module
+-- ----------
+insert into public.modules (key, label) values ('assets', 'Assets')
+on conflict (key) do update set label = excluded.label;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'asset_type') then
+    create type public.asset_type as enum ('laptop', 'id_card', 'gift', 'other');
+  end if;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'asset_status') then
+    create type public.asset_status as enum ('available', 'assigned', 'maintenance', 'retired');
+  end if;
+end $$;
+
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'assignment_status') then
+    create type public.assignment_status as enum ('active', 'returned');
+  end if;
+end $$;
+
+create table if not exists public.assets (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  name text not null,
+  asset_type public.asset_type not null,
+  asset_tag text not null,
+  serial_number text,
+  brand text,
+  model text,
+  purchase_date date,
+  purchase_price numeric(12,2),
+  status public.asset_status not null default 'available',
+  notes text,
+  created_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.assets enable row level security;
+
+drop policy if exists assets_select_member on public.assets;
+create policy assets_select_member on public.assets
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists assets_insert_admin on public.assets;
+create policy assets_insert_admin on public.assets
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists assets_update_admin on public.assets;
+create policy assets_update_admin on public.assets
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists assets_delete_admin on public.assets;
+create policy assets_delete_admin on public.assets
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+create table if not exists public.asset_assignments (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  asset_id uuid references public.assets(id) on delete set null,
+  user_id uuid not null references public.users(id),
+  assigned_by uuid not null references public.users(id),
+  is_own_device boolean not null default false,
+  assignment_date date not null,
+  expected_return_date date,
+  actual_return_date date,
+  return_condition text,
+  status public.assignment_status not null default 'active',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.asset_assignments enable row level security;
+
+drop policy if exists asset_assignments_select_member on public.asset_assignments;
+create policy asset_assignments_select_member on public.asset_assignments
+for select using (public.is_tenant_member(tenant_id));
+
+drop policy if exists asset_assignments_insert_admin on public.asset_assignments;
+create policy asset_assignments_insert_admin on public.asset_assignments
+for insert with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists asset_assignments_update_admin on public.asset_assignments;
+create policy asset_assignments_update_admin on public.asset_assignments
+for update using (public.has_tenant_role(tenant_id, array['owner','admin']))
+with check (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop policy if exists asset_assignments_delete_admin on public.asset_assignments;
+create policy asset_assignments_delete_admin on public.asset_assignments
+for delete using (public.has_tenant_role(tenant_id, array['owner','admin']));
+
+drop trigger if exists trg_assets_updated_at on public.assets;
+create trigger trg_assets_updated_at before update on public.assets
+for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_asset_assignments_updated_at on public.asset_assignments;
+create trigger trg_asset_assignments_updated_at before update on public.asset_assignments
 for each row execute function public.touch_updated_at();
 
 -- ----------
@@ -3252,6 +3381,26 @@ BEGIN
 
   RETURN v_conv_id;
 END;
+$$;
+
+create or replace function public.update_leave_balance(
+  p_balance_id uuid,
+  p_pending_delta numeric,
+  p_used_delta numeric default 0
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.leave_balances
+  set
+    pending_days = pending_days + p_pending_delta,
+    used_days = used_days + p_used_delta,
+    updated_at = now()
+  where id = p_balance_id;
+end;
 $$;
 
 -- Enable RLS

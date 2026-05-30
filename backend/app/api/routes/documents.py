@@ -180,12 +180,12 @@ def preview_document_html(
 
 
 @router.get("/documents/{doc_id}/pdf")
-def download_document_pdf(
+async def download_document_pdf(
     doc_id: str,
     ctx: RequestContext = Depends(require_module_permission("documents", "view")),
 ):
     supabase = get_supabase_client(access_token=ctx.access_token)
-    pdf_buffer, filename = DocumentsService.download_pdf(supabase, doc_id, ctx)
+    pdf_buffer, filename = await DocumentsService.download_pdf(supabase, doc_id, ctx)
     return Response(
         content=pdf_buffer.getvalue(),
         media_type="application/pdf",

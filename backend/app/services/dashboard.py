@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -6,6 +7,8 @@ from postgrest.exceptions import APIError
 
 from app.core.deps import RequestContext
 from app.services.access_scope import AccessScopeService
+
+logger = logging.getLogger("joycrm.dashboard")
 
 
 class DashboardService:
@@ -101,7 +104,7 @@ class DashboardService:
                     attendance_today[st] += 1
                 attendance_today["total"] += 1
         except APIError:
-            pass
+            logger.warning("Failed to fetch attendance records for dashboard summary")
 
         # --- Unread announcements ---
         unread_count = 0
@@ -119,21 +122,21 @@ class DashboardService:
                 read_ids = {r["announcement_id"] for r in (read_rows.data or [])}
                 unread_count = len(ann_ids) - len(read_ids)
         except APIError:
-            pass
+            logger.warning("Failed to fetch unread announcements for dashboard summary")
 
         # --- Pending leave requests ---
         pending_leave = 0
         try:
             pending_leave = count("leave_requests", status="pending")
         except APIError:
-            pass
+            logger.warning("Failed to fetch pending leave requests for dashboard summary")
 
         # --- New candidates this month ---
         new_candidates = 0
         try:
             new_candidates = count("candidates", gte={"created_at": month_start.isoformat()})
         except APIError:
-            pass
+            logger.warning("Failed to fetch new candidates for dashboard summary")
 
         # --- Overdue tasks ---
         overdue_tasks = 0
@@ -145,7 +148,7 @@ class DashboardService:
             if project_id_list is None or project_id_list:
                 overdue_tasks = count("tasks", **ot_f)
         except APIError:
-            pass
+            logger.warning("Failed to fetch overdue tasks for dashboard summary")
 
         # --- Upcoming deadlines (tasks + tickets due within 7 days) ---
         upcoming_deadlines = []
@@ -200,7 +203,7 @@ class DashboardService:
             upcoming_deadlines.sort(key=lambda x: x.get("due_date", ""))
             upcoming_deadlines = upcoming_deadlines[:5]
         except APIError:
-            pass
+            logger.warning("Failed to fetch upcoming deadlines for dashboard summary")
 
         # --- Recent activity ---
         recent_activity = []
@@ -235,7 +238,7 @@ class DashboardService:
                         "user_name": "",
                     })
             except APIError:
-                pass
+                logger.warning("Failed to fetch recent candidates for dashboard activity")
             try:
                 leave_rows = supabase.table("leave_requests").select("id, created_at, status").eq("tenant_id", ctx.tenant_id).order("created_at", desc=True).limit(5).execute()
                 for lr in leave_rows.data or []:
@@ -247,12 +250,12 @@ class DashboardService:
                         "user_name": "",
                     })
             except APIError:
-                pass
+                logger.warning("Failed to fetch recent leave requests for dashboard activity")
 
             recent_activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             recent_activity = recent_activity[:10]
         except APIError:
-            pass
+            logger.warning("Failed to fetch recent activity for dashboard summary")
 
         # --- Breakdowns ---
         def _breakdown(table, status_col="status"):
@@ -270,19 +273,19 @@ class DashboardService:
                 p_counts[r.get("status", "unknown")] += 1
             project_breakdown = [{"name": k.replace("_", " ").title(), "value": v} for k, v in p_counts.items()]
         except APIError:
-            pass
+            logger.warning("Failed to fetch project breakdown for dashboard")
 
         ticket_breakdown = []
         try:
             ticket_breakdown = _breakdown("tickets")
         except APIError:
-            pass
+            logger.warning("Failed to fetch ticket breakdown for dashboard")
 
         task_breakdown = []
         try:
             task_breakdown = _breakdown("tasks")
         except APIError:
-            pass
+            logger.warning("Failed to fetch task breakdown for dashboard")
 
         # --- Monthly trends (last 12 months) ---
         monthly_trends = {"months": [], "tickets_created": [], "tickets_closed": [], "tasks_completed": []}
@@ -332,7 +335,7 @@ class DashboardService:
                 "tasks_completed": tasks_done,
             }
         except APIError:
-            pass
+            logger.warning("Failed to fetch monthly trends for dashboard")
 
         # --- Total logged hours ---
         logged_hours = 0
@@ -340,7 +343,7 @@ class DashboardService:
             total_minutes = supabase.table("time_entries").select("duration_minutes").eq("tenant_id", ctx.tenant_id).execute()
             logged_hours = sum(r["duration_minutes"] for r in (total_minutes.data or [])) / 60
         except APIError:
-            pass
+            logger.warning("Failed to fetch logged hours for dashboard")
 
         return {
             "active_projects": projects_count or 0,

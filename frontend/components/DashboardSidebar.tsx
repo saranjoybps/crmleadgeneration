@@ -25,6 +25,7 @@ import {
   FileSpreadsheet,
   Receipt,
   Wand2,
+  Package,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -80,8 +81,8 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
     links: [
       { href: "/dashboard/shifts", moduleKey: "shift", label: "Shifts", icon: Clock, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/attendance", moduleKey: "attendance", label: "Attendance", icon: Fingerprint, roles: ["owner", "admin", "member"] },
-      { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/leave", moduleKey: "leave", label: "Leave", icon: CalendarCheck, roles: ["owner", "admin", "member"] },
+      { href: "/dashboard/candidates", moduleKey: "recruitment", label: "Candidates", icon: UserPlus, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/payroll", moduleKey: "payroll", label: "Payroll", icon: Receipt, roles: ["owner", "admin", "member"] },
     ],
   },
@@ -90,6 +91,7 @@ const CATEGORIES: Array<{ key: string; label: string; links: SidebarLink[] }> = 
     label: "Tools",
     links: [
       { href: "/dashboard/vault", moduleKey: "vault", label: "Vault", icon: LockKeyhole, roles: ["owner", "admin", "member", "client"] },
+      { href: "/dashboard/assets", moduleKey: "assets", label: "Assets", icon: Package, roles: ["owner", "admin", "member"] },
       { href: "/dashboard/documents", moduleKey: "documents", label: "Documents", icon: FileText, roles: ["owner", "admin", "member", "client"] },
       { href: "/dashboard/ai-studio", moduleKey: "ai-studio", label: "AI Studio", icon: Wand2, roles: ["owner", "admin", "member"] },
     ],

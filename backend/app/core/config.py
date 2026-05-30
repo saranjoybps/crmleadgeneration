@@ -22,6 +22,9 @@ def get_settings() -> Settings:
     load_dotenv(env_path, override=False)
 
     allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
+    frontend_url = os.getenv("FRONTEND_URL", "").strip()
+    if frontend_url and frontend_url not in allowed_origins:
+        allowed_origins.append(frontend_url)
     return Settings(
         supabase_url=os.getenv("SUPABASE_URL", ""),
         supabase_service_key=os.getenv("SUPABASE_SERVICE_KEY", ""),

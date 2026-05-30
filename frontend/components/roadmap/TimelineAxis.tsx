@@ -4,8 +4,12 @@ import React, { useMemo } from "react";
 import {
   format,
   eachMonthOfInterval,
+  eachWeekOfInterval,
   differenceInDays,
   startOfDay,
+  startOfWeek,
+  endOfWeek,
+  isWithinInterval,
 } from "date-fns";
 import { TimelineRange } from "@/lib/roadmap-utils";
 
@@ -14,7 +18,7 @@ interface TimelineAxisProps {
   showQuarters?: boolean;
 }
 
-export function TimelineAxis({ range, showQuarters = false }: TimelineAxisProps) {
+export function TimelineAxis({ range, showQuarters = true }: TimelineAxisProps) {
   const today = startOfDay(new Date());
   const todayPosition = useMemo(() => {
     if (today < range.startDate || today > range.endDate) return null;
@@ -35,8 +39,19 @@ export function TimelineAxis({ range, showQuarters = false }: TimelineAxisProps)
     }));
   }, [range]);
 
+  const weeks = useMemo(() => {
+    const result = eachWeekOfInterval({
+      start: range.startDate,
+      end: range.endDate,
+    }, { weekStartsOn: 1 });
+    return result.map((week) => ({
+      date: week,
+      label: format(week, "d MMM"),
+      dayPosition: differenceInDays(week, range.startDate),
+    }));
+  }, [range]);
+
   const quarters = useMemo(() => {
-    if (!showQuarters) return [];
     const quarterMap = new Map<string, { label: string; startDay: number; endDay: number }>();
 
     months.forEach((month, idx) => {
@@ -55,57 +70,65 @@ export function TimelineAxis({ range, showQuarters = false }: TimelineAxisProps)
     });
 
     return Array.from(quarterMap.values());
-  }, [months, showQuarters]);
+  }, [months]);
 
   return (
     <div className="relative">
       {showQuarters && quarters.length > 0 && (
-        <div className="h-8 border-b border-slate-200 bg-slate-50">
+        <div className="h-7 border-b border-slate-200 bg-slate-50/80 flex">
           {quarters.map((q) => (
             <div
               key={q.label}
-              className="absolute top-0 flex items-center justify-center h-8 border-r border-slate-200"
+              className="flex items-center justify-center h-7 border-r border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider"
               style={{
-                left: `${(q.startDay / range.totalDays) * 100}%`,
                 width: `${((q.endDay - q.startDay) / range.totalDays) * 100}%`,
               }}
             >
-              <span className="text-xs font-bold text-slate-500">{q.label}</span>
+              {q.label}
             </div>
           ))}
         </div>
       )}
 
-      <div className="h-6 bg-slate-100 border-b border-slate-200 relative">
+      <div className="h-7 bg-white border-b border-slate-200 relative flex">
         {months.map((month, idx) => {
           const nextMonth = months[idx + 1];
           const widthPercent = nextMonth
             ? ((nextMonth.dayPosition - month.dayPosition) / range.totalDays) * 100
             : ((range.totalDays - month.dayPosition) / range.totalDays) * 100;
 
+          const isCurrentMonth = month.date.getMonth() === today.getMonth() && month.date.getFullYear() === today.getFullYear();
+
           return (
             <div
               key={month.label}
-              className="absolute top-0 flex items-center justify-center h-6 border-r border-slate-200"
-              style={{
-                left: `${(month.dayPosition / range.totalDays) * 100}%`,
-                width: `${widthPercent}%`,
-              }}
+              className={`flex items-center justify-center h-7 border-r border-slate-100 text-[10px] font-bold uppercase tracking-wider
+                ${isCurrentMonth ? "text-violet-700 bg-violet-50/50" : "text-slate-500"}
+              `}
+              style={{ width: `${widthPercent}%` }}
             >
-              <span className="text-[10px] font-semibold text-slate-600">{month.shortLabel}</span>
+              {month.shortLabel}
             </div>
           );
         })}
 
+        {weeks.map((week) => (
+          <div
+            key={week.label}
+            className="absolute top-7 bottom-0 w-px bg-slate-100/50 z-0"
+            style={{ left: `${(week.dayPosition / range.totalDays) * 100}%` }}
+          />
+        ))}
+
         {todayPosition !== null && (
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-10"
+            className="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-20 shadow-sm"
             style={{
               left: `${(todayPosition / range.totalDays) * 100}%`,
             }}
           >
-            <div className="absolute -top-5 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-t-sm whitespace-nowrap">
-              Today
+            <div className="absolute -top-0.5 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-b whitespace-nowrap z-30">
+              TODAY
             </div>
           </div>
         )}

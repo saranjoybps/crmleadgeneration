@@ -16,7 +16,7 @@ export async function createMilestone(formData: FormData) {
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_create: boolean } }> }>(
     "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
   );
-  const canCreate = permsRes.data?.modules.find((m) => m.key === "projects")?.permissions.can_create ?? false;
+  const canCreate = permsRes.data?.modules.find((m) => m.key === "roadmap")?.permissions.can_create ?? false;
   if (!canCreate) {
     redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to create milestones.")}`);
   }
@@ -44,7 +44,7 @@ export async function updateMilestone(formData: FormData) {
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_edit: boolean } }> }>(
     "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
   );
-  const canEdit = permsRes.data?.modules.find((m) => m.key === "projects")?.permissions.can_edit ?? false;
+  const canEdit = permsRes.data?.modules.find((m) => m.key === "roadmap")?.permissions.can_edit ?? false;
   if (!canEdit) {
     redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to update milestones.")}`);
   }
@@ -68,7 +68,7 @@ export async function deleteMilestone(formData: FormData) {
   const permsRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_delete: boolean } }> }>(
     "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
   );
-  const canDelete = permsRes.data?.modules.find((m) => m.key === "projects")?.permissions.can_delete ?? false;
+  const canDelete = permsRes.data?.modules.find((m) => m.key === "roadmap")?.permissions.can_delete ?? false;
   if (!canDelete) {
     redirect(`${path}?error=${encodeURIComponent("Insufficient permissions to delete milestones.")}`);
   }

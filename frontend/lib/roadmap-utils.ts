@@ -39,6 +39,7 @@ export interface RoadmapTicket {
   progress: number;
   priority: Ticket["priority"];
   originalStatus: Ticket["status"];
+  projectId: string | null;
   milestoneId: string | null;
   tasks: RoadmapTask[];
   dependsOn: string[];
@@ -171,10 +172,12 @@ export function transformRoadmapData({
   tasks,
   milestones,
   tickets,
+  projectNames,
 }: {
   tasks: Task[];
   milestones: Milestone[];
   tickets: Ticket[];
+  projectNames?: Map<string, string>;
 }): {
   projects: RoadmapProject[];
   allItemsMap: Map<string, RoadmapTask | RoadmapTicket | RoadmapMilestone>;
@@ -184,7 +187,6 @@ export function transformRoadmapData({
   const today = startOfDay(new Date());
 
   const projectMap = new Map<string, RoadmapProject>();
-  const projectNames = new Map<string, string>();
 
   const ticketToMilestone = new Map<string, string>();
   const taskToTicket = new Map<string, string>();
@@ -313,6 +315,7 @@ export function transformRoadmapData({
       progress: ticketProgress,
       priority: t.priority,
       originalStatus: t.status,
+      projectId: t.project_id,
       milestoneId: t.milestone_id,
       tasks: linkedTasks,
       dependsOn: Array.from(ticketDependsOn),
@@ -582,11 +585,15 @@ export function transformRoadmapData({
     }
   });
 
+  function getProjectName(projectId: string): string {
+    return projectNames?.get(projectId) ?? projectId.slice(0, 8);
+  }
+
   milestones.forEach((m) => {
     if (!projectMap.has(m.project_id)) {
       projectMap.set(m.project_id, {
         id: m.project_id,
-        name: `Project ${m.project_id.slice(0, 8)}`,
+        name: getProjectName(m.project_id),
         milestones: [],
         ticketsWithoutMilestone: [],
         tasksWithoutTicket: [],
@@ -598,7 +605,7 @@ export function transformRoadmapData({
     if (t.project_id && !projectMap.has(t.project_id)) {
       projectMap.set(t.project_id, {
         id: t.project_id,
-        name: `Project ${t.project_id.slice(0, 8)}`,
+        name: getProjectName(t.project_id),
         milestones: [],
         ticketsWithoutMilestone: [],
         tasksWithoutTicket: [],
@@ -614,14 +621,10 @@ export function transformRoadmapData({
   });
 
   transformedTickets.forEach((t) => {
-    if (!t.milestoneId) {
-      for (const project of projectMap.values()) {
-        const inMilestone = project.milestones.some((m) =>
-          m.tickets.some((mt) => mt.id === t.id)
-        );
-        if (!inMilestone) {
-          project.ticketsWithoutMilestone.push(t);
-        }
+    if (!t.milestoneId && t.projectId) {
+      const project = projectMap.get(t.projectId);
+      if (project) {
+        project.ticketsWithoutMilestone.push(t);
       }
     }
   });

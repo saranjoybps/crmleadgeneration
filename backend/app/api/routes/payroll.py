@@ -221,23 +221,27 @@ def calculate_salary(
 
 @router.get("/payroll/calculate")
 def calculate_all_salaries(
-    month: int = Query(default=None),
-    year: int = Query(default=None),
+    month: int = Query(default=None, ge=1, le=12),
+    year: int = Query(default=None, ge=2020, le=2100),
     ctx: RequestContext = Depends(require_module_permission("payroll", "view")),
 ):
+    import logging
+    logger = logging.getLogger("joycrm.payroll")
     from datetime import datetime
     now = datetime.now()
     m = month or now.month
     y = year or now.year
     supabase = get_supabase_client(access_token=ctx.access_token)
-    salaries = PayrollService._fetch(supabase, ctx, "employee_salaries", status="active")
+    salaries = PayrollService.list_employee_salaries(supabase, ctx, status="active")
     results = []
+    errors = []
     for s in salaries:
         uid = s.get("user_id")
         if uid:
             try:
                 calc = PayrollService.calculate_monthly(supabase, ctx, uid, m, y)
                 results.append(calc)
-            except Exception:
-                pass
-    return response(results)
+            except Exception as exc:
+                logger.warning("Payroll calculation failed for user %s: %s", uid, exc)
+                errors.append({"user_id": uid, "error": str(exc)})
+    return response({"results": results, "errors": errors})
