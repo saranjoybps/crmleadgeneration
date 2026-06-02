@@ -81,12 +81,10 @@ export default function ShiftsContent({
         </div>
         <div className="flex items-center gap-3">
           {shiftPerm.can_create && (
-            <button onClick={() => setModal({ type: "create" })}>
-              <Button size="lg" className="gap-2 shadow-lg shadow-violet-200">
-                <Plus className="h-5 w-5" />
-                Add Shift
-              </Button>
-            </button>
+            <Button onClick={() => setModal({ type: "create" })} size="lg" className="gap-2 shadow-lg shadow-violet-200">
+              <Plus className="h-5 w-5" />
+              Add Shift
+            </Button>
           )}
         </div>
       </header>
@@ -138,18 +136,14 @@ export default function ShiftsContent({
                   </div>
                   <div className="flex items-center gap-1 ml-3">
                     {shiftPerm.can_edit && (
-                      <button onClick={() => setModal({ type: "edit", shift_id: shift.id })}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                      </button>
+                      <Button onClick={() => setModal({ type: "edit", shift_id: shift.id })} variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
                     )}
                     {shiftPerm.can_delete && (
-                      <button onClick={() => setModal({ type: "delete", shift_id: shift.id })}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl hover:bg-red-50 hover:text-red-600">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </button>
+                      <Button onClick={() => setModal({ type: "delete", shift_id: shift.id })} variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl hover:bg-red-50 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -160,9 +154,7 @@ export default function ShiftsContent({
               <Clock className="h-8 w-8 mb-2 text-slate-300" />
               <p className="text-sm">No shifts defined yet</p>
               {shiftPerm.can_create && (
-                <button onClick={() => setModal({ type: "create" })} className="mt-3">
-                  <Button variant="outline" size="sm">Create your first shift</Button>
-                </button>
+                <Button onClick={() => setModal({ type: "create" })} variant="outline" size="sm" className="mt-3">Create your first shift</Button>
               )}
             </div>
           )}
@@ -175,12 +167,10 @@ export default function ShiftsContent({
               Assignments
             </h3>
             {shiftPerm.can_create && (
-              <button onClick={() => setModal({ type: "assign" })}>
-                <Button size="sm" className="gap-1">
-                  <Plus className="h-3.5 w-3.5" />
-                  Assign
-                </Button>
-              </button>
+              <Button onClick={() => setModal({ type: "assign" })} size="sm" className="gap-1">
+                <Plus className="h-3.5 w-3.5" />
+                Assign
+              </Button>
             )}
           </div>
           {assignments && assignments.length > 0 ? (
@@ -197,11 +187,9 @@ export default function ShiftsContent({
                   </div>
                   <div className="flex items-center gap-1">
                     {shiftPerm.can_edit && (
-                      <button onClick={() => setModal({ type: "edit-assignment", assignment_id: a.id })}>
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                      </button>
+                      <Button onClick={() => setModal({ type: "edit-assignment", assignment_id: a.id })} variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-xl">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
                     )}
                     {shiftPerm.can_delete && (
                       <form action={unassignShift}>
@@ -253,9 +241,7 @@ export default function ShiftsContent({
           </div>
           <div className="flex gap-3 pt-6 border-t border-soft">
             <Button type="submit" className="flex-1 py-4">Create Shift</Button>
-            <button onClick={() => setModal(null)} className="flex-1">
-              <Button variant="outline" type="button" className="w-full py-4">Cancel</Button>
-            </button>
+            <Button onClick={() => setModal(null)} variant="outline" type="button" className="flex-1 py-4">Cancel</Button>
           </div>
         </form>
       </Modal>
@@ -295,9 +281,7 @@ export default function ShiftsContent({
             </div>
             <div className="flex gap-3 pt-6 border-t border-soft">
               <Button type="submit" className="flex-1 py-4">Save Changes</Button>
-              <button onClick={() => setModal(null)} className="flex-1">
-                <Button variant="outline" type="button" className="w-full py-4">Cancel</Button>
-              </button>
+              <Button onClick={() => setModal(null)} variant="outline" type="button" className="flex-1 py-4">Cancel</Button>
             </div>
           </form>
         </Modal>
@@ -317,9 +301,7 @@ export default function ShiftsContent({
               <input type="hidden" name="organization_slug" value={orgSlug} />
               <input type="hidden" name="shift_id" value={selectedShift.id} />
               <Button variant="danger" type="submit" className="py-3">Delete</Button>
-              <button onClick={() => setModal(null)}>
-                <Button variant="outline" className="w-full py-3 border-none text-muted">Cancel</Button>
-              </button>
+              <Button onClick={() => setModal(null)} variant="outline" className="w-full py-3 border-none text-muted">Cancel</Button>
             </form>
           </div>
         </Modal>
@@ -356,9 +338,7 @@ export default function ShiftsContent({
           </div>
           <div className="flex gap-3 pt-6 border-t border-soft">
             <Button type="submit" className="flex-1 py-4">Assign Shift</Button>
-            <button onClick={() => setModal(null)} className="flex-1">
-              <Button variant="outline" type="button" className="w-full py-4">Cancel</Button>
-            </button>
+            <Button onClick={() => setModal(null)} variant="outline" type="button" className="flex-1 py-4">Cancel</Button>
           </div>
         </form>
       </Modal>
@@ -399,9 +379,7 @@ export default function ShiftsContent({
             </div>
             <div className="flex gap-3 pt-6 border-t border-soft">
               <Button type="submit" className="flex-1 py-4">Save Changes</Button>
-              <button onClick={() => setModal(null)} className="flex-1">
-                <Button variant="outline" type="button" className="w-full py-4">Cancel</Button>
-              </button>
+              <Button onClick={() => setModal(null)} variant="outline" type="button" className="flex-1 py-4">Cancel</Button>
             </div>
           </form>
         </Modal>

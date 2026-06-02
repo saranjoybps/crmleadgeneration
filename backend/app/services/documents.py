@@ -2,10 +2,11 @@ import asyncio
 import re
 from datetime import date, datetime, timezone
 from io import BytesIO
+from pathlib import Path
 
 from fastapi import HTTPException
 from supabase import Client
-from playwright.sync_api import sync_playwright
+from xhtml2pdf import pisa
 
 from app.core.config import get_settings
 from app.core.deps import RequestContext
@@ -26,6 +27,8 @@ class DocumentsService:
         for key, value in content_data.items():
             rendered = rendered.replace("{{" + key + "}}", str(value) if value is not None else "")
         rendered = rendered.replace("{{current_date}}", date.today().strftime("%B %d, %Y"))
+        uploads_dir = Path(get_settings().uploads_dir).resolve()
+        rendered = re.sub(r'src="\/uploads\/([^"]+)"', lambda m: f'src="{(uploads_dir / m.group(1)).as_posix()}"', rendered)
         return rendered
 
     @staticmethod
@@ -47,17 +50,30 @@ class DocumentsService:
         .page-break { page-break-before: always; }
         """
 
+    @staticmethod
+    def _build_full_html(rendered_html: str, watermark: str | None = None) -> str:
+        watermark_style = ""
+        watermark_body = ""
+        if watermark:
+            watermark_style = """
+            .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80pt; color: #ccc; opacity: 0.15; z-index: -1; white-space: nowrap; pointer-events: none; text-align: center; width: 100%; }
+            """
+            watermark_body = f'<div class="watermark">{watermark}</div>'
+        return f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}{watermark_style}</style></head><body>{watermark_body}{rendered_html}</body></html>"
+
     # ---- Document Types ----
 
     @staticmethod
-    def list_document_types(supabase: Client, ctx: RequestContext):
-        res = (
+    def list_document_types(supabase: Client, ctx: RequestContext, include_inactive: bool = False):
+        query = (
             supabase.table("document_types")
             .select("*")
             .or_("tenant_id.is.null,tenant_id.eq." + ctx.tenant_id)
             .order("name")
-            .execute()
         )
+        if not include_inactive:
+            query = query.eq("is_active", True)
+        res = query.execute()
         return res.data or []
 
     @staticmethod
@@ -109,13 +125,15 @@ class DocumentsService:
     # ---- Templates ----
 
     @staticmethod
-    def list_templates(supabase: Client, ctx: RequestContext, document_type_id: str | None = None, search: str | None = None):
+    def list_templates(supabase: Client, ctx: RequestContext, document_type_id: str | None = None, search: str | None = None, include_inactive: bool = False):
         query = (
             supabase.table("document_templates")
             .select("*, document_type:document_type_id(id, name, key)")
             .eq("tenant_id", ctx.tenant_id)
             .order("updated_at", desc=True)
         )
+        if not include_inactive:
+            query = query.eq("is_active", True)
         if document_type_id:
             query = query.eq("document_type_id", document_type_id)
         if search:
@@ -234,7 +252,7 @@ class DocumentsService:
     def generate_document(supabase: Client, payload: DocumentGenerateRequest, ctx: RequestContext):
         template = DocumentsService.get_template(supabase, payload.template_id, ctx)
         rendered_html = DocumentsService._render_template(template["content"], payload.content_data)
-        full_html = f"<!DOCTYPE html><html><head><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
+        full_html = DocumentsService._build_full_html(rendered_html, watermark=payload.content_data.get("watermark_text"))
         created = (
             supabase.table("generated_documents")
             .insert({
@@ -257,18 +275,15 @@ class DocumentsService:
     def preview_document(supabase: Client, payload: DocumentGenerateRequest, ctx: RequestContext):
         template = DocumentsService.get_template(supabase, payload.template_id, ctx)
         rendered_html = DocumentsService._render_template(template["content"], payload.content_data)
-        full_html = f"<!DOCTYPE html><html><head><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
-        return full_html
+        return DocumentsService._build_full_html(rendered_html, watermark=payload.content_data.get("watermark_text"))
 
     @staticmethod
     def _render_pdf_sync(full_html: str) -> bytes:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            page.set_content(full_html, wait_until="networkidle")
-            pdf_bytes = page.pdf(format='A4', margin={'top': '20mm', 'bottom': '20mm', 'left': '20mm', 'right': '20mm'})
-            browser.close()
-        return pdf_bytes
+        buf = BytesIO()
+        pdf = pisa.CreatePDF(full_html, dest=buf)
+        if pdf.err:
+            raise HTTPException(status_code=500, detail="PDF generation failed")
+        return buf.getvalue()
 
     @staticmethod
     async def download_pdf(supabase: Client, doc_id: str, ctx: RequestContext):
@@ -278,7 +293,7 @@ class DocumentsService:
             raise HTTPException(status_code=400, detail="Document has no associated template; PDF generation requires a template")
         template = DocumentsService.get_template(supabase, str(tid), ctx)
         rendered_html = DocumentsService._render_template(template["content"], doc["content_data"])
-        full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
+        full_html = DocumentsService._build_full_html(rendered_html, watermark=doc["content_data"].get("watermark_text"))
         pdf_bytes = await asyncio.to_thread(DocumentsService._render_pdf_sync, full_html)
         return BytesIO(pdf_bytes), f"{doc['title']}.pdf"
 

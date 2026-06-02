@@ -16,6 +16,7 @@ class Settings:
     openai_model: str = "gpt-4o"
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
+    uploads_dir: str = "uploads"
 
 
 @lru_cache

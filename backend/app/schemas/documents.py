@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentTypeCreate(BaseModel):
@@ -59,7 +59,7 @@ class Template(BaseModel):
 class DocumentGenerateRequest(BaseModel):
     template_id: str
     employee_id: str
-    title: str
+    title: str = Field(..., min_length=1, max_length=255)
     content_data: dict
 
 

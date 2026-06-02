@@ -24,6 +24,9 @@ const SYSTEM_VARIABLES = [
   { key: "salary", label: "Salary", type: "text" },
   { key: "company_name", label: "Company Name", type: "text" },
   { key: "current_date", label: "Current Date", type: "system" },
+  { key: "company_logo_url", label: "Company Logo URL", type: "text" },
+  { key: "signature_url", label: "Signature Image URL", type: "text" },
+  { key: "watermark_text", label: "Watermark Text", type: "text" },
 ];
 
 export default function TemplateEditorPage({ params }: TemplateEditorPageProps) {
@@ -127,7 +130,7 @@ export default function TemplateEditorPage({ params }: TemplateEditorPageProps) 
         const res = await apiRequest<DocumentTemplate>(`/api/v1/document-templates/${id}`, {
           method: "PATCH",
           orgSlug,
-          body: { name, content, variables },
+          body: { name, document_type_id: documentTypeId || null, content, variables },
         });
         if (res.error) throw new Error(res.error);
         setMessage({ type: "success", text: "Template saved successfully" });

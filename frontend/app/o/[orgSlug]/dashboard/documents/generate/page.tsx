@@ -3,7 +3,7 @@
 import { use, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText, Wand2, Download, Eye } from "lucide-react";
+import { ArrowLeft, FileText, Wand2, Download, Eye, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -24,6 +24,9 @@ const SYSTEM_VARIABLES = [
   { key: "joining_date", label: "Joining Date", type: "date" },
   { key: "salary", label: "Salary", type: "text" },
   { key: "company_name", label: "Company Name", type: "text" },
+  { key: "company_logo_url", label: "Company Logo URL", type: "text" },
+  { key: "signature_url", label: "Signature Image URL", type: "text" },
+  { key: "watermark_text", label: "Watermark Text", type: "text" },
 ];
 
 export default function GenerateDocumentPage({ params }: GeneratePageProps) {
@@ -60,6 +63,36 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
   const [generating, setGenerating] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+
+  const handleUpload = async (field: string) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/webp";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploading(field);
+      try {
+        const { headers } = await import("@/lib/api-client").then(m => m.getApiContext(orgSlug));
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/v1/upload`, {
+          method: "POST",
+          headers: { "Authorization": headers["Authorization"] || "", "X-Org-Slug": orgSlug },
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Upload failed");
+        setContentData((prev) => ({ ...prev, [field]: data.data?.url || "" }));
+      } catch (err) {
+        setMessage({ type: "error", text: err instanceof Error ? err.message : "Upload failed" });
+      } finally {
+        setUploading(null);
+      }
+    };
+    input.click();
+  };
 
   useEffect(() => {
     async function load() {
@@ -154,8 +187,6 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
         },
       });
       if (res.error) throw new Error(res.error);
-      setCustomVars([]);
-      setContentData({});
       const match = res.data?.content?.match(/<body[^>]*>([\s\S]*)<\/body>/i);
       if (match) {
         setPreviewHtml(match[1]);
@@ -258,20 +289,43 @@ export default function GenerateDocumentPage({ params }: GeneratePageProps) {
               {allVars.map((v) => (
                 <div key={v.key} className="space-y-1">
                   <label className="text-xs font-medium text-muted">{v.label}</label>
-                  {v.type === "date" ? (
-                    <input
-                      type="date"
-                      value={contentData[v.key] || ""}
-                      onChange={(e) => setContentData((prev) => ({ ...prev, [v.key]: e.target.value }))}
-                      className="w-full rounded-xl border border-soft bg-white px-4 py-2.5 text-sm focus:ring-2 focus:ring-violet-500"
-                    />
-                  ) : (
-                    <input
-                      value={contentData[v.key] || ""}
-                      onChange={(e) => setContentData((prev) => ({ ...prev, [v.key]: e.target.value }))}
-                      placeholder={`{{${v.key}}}`}
-                      className="w-full rounded-xl border border-soft bg-white px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-violet-500"
-                    />
+                  <div className="flex gap-2">
+                    {v.key === "company_logo_url" || v.key === "signature_url" ? (
+                      <>
+                        <input
+                          value={contentData[v.key] || ""}
+                          onChange={(e) => setContentData((prev) => ({ ...prev, [v.key]: e.target.value }))}
+                          placeholder={`{{${v.key}}}`}
+                          className="flex-1 rounded-xl border border-soft bg-white px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-violet-500"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleUpload(v.key)}
+                          disabled={uploading === v.key}
+                          className="shrink-0"
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    ) : v.type === "date" ? (
+                      <input
+                        type="date"
+                        value={contentData[v.key] || ""}
+                        onChange={(e) => setContentData((prev) => ({ ...prev, [v.key]: e.target.value }))}
+                        className="w-full rounded-xl border border-soft bg-white px-4 py-2.5 text-sm focus:ring-2 focus:ring-violet-500"
+                      />
+                    ) : (
+                      <input
+                        value={contentData[v.key] || ""}
+                        onChange={(e) => setContentData((prev) => ({ ...prev, [v.key]: e.target.value }))}
+                        placeholder={`{{${v.key}}}`}
+                        className="w-full rounded-xl border border-soft bg-white px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-violet-500"
+                      />
+                    )}
+                  </div>
+                  {v.key === "watermark_text" && (
+                    <p className="text-[10px] text-muted">Appears diagonally in the PDF background</p>
                   )}
                 </div>
               ))}

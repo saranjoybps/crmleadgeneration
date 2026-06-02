@@ -17,7 +17,7 @@ export default async function DocumentTypesPage({ params, searchParams }: Docume
 
   const [permissionsRes, typesRes] = await Promise.all([
     getPermissions(orgSlug),
-    apiRequest<DocumentType[]>("/api/v1/document-types", { orgSlug }),
+    apiRequest<DocumentType[]>("/api/v1/document-types?include_inactive=true", { orgSlug }),
   ]);
 
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;

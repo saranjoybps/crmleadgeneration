@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
 from app.api.utils import response
@@ -21,10 +21,11 @@ router = APIRouter(prefix="", tags=["documents"])
 
 @router.get("/document-types")
 def list_document_types(
+    include_inactive: bool = Query(default=False),
     ctx: RequestContext = Depends(require_module_permission("documents", "view")),
 ):
     supabase = get_supabase_client(access_token=ctx.access_token)
-    types = DocumentsService.list_document_types(supabase, ctx)
+    types = DocumentsService.list_document_types(supabase, ctx, include_inactive=include_inactive)
     return response(types)
 
 
@@ -65,10 +66,11 @@ def delete_document_type(
 def list_templates(
     document_type_id: str | None = Query(default=None),
     search: str | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
     ctx: RequestContext = Depends(require_module_permission("documents", "view")),
 ):
     supabase = get_supabase_client(access_token=ctx.access_token)
-    templates = DocumentsService.list_templates(supabase, ctx, document_type_id=document_type_id, search=search)
+    templates = DocumentsService.list_templates(supabase, ctx, document_type_id=document_type_id, search=search, include_inactive=include_inactive)
     return response(templates)
 
 
@@ -178,7 +180,7 @@ def preview_document_html(
         raise HTTPException(status_code=400, detail="Document has no associated template; preview requires a template")
     template = DocumentsService.get_template(supabase, str(tid), ctx)
     rendered_html = DocumentsService._render_template(template["content"], doc["content_data"])
-    full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{DocumentsService._get_default_css()}</style></head><body>{rendered_html}</body></html>"
+    full_html = DocumentsService._build_full_html(rendered_html, watermark=doc["content_data"].get("watermark_text"))
     return HTMLResponse(content=full_html)
 
 
