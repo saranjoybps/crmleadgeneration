@@ -3,6 +3,7 @@ from collections import defaultdict
 
 from supabase import Client
 
+from app.core.cache import cached
 from app.core.deps import RequestContext
 
 
@@ -33,6 +34,7 @@ class AnalyticsService:
         return q.execute().data or []
 
     @staticmethod
+    @cached(ttl=60, key_prefix="analytics")
     def overview(supabase: Client, ctx: RequestContext, months: int = 12):
         now = datetime.now(timezone.utc)
         start_date = (now - timedelta(days=30 * months)).isoformat()

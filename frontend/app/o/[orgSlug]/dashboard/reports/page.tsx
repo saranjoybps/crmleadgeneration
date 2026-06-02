@@ -1,5 +1,4 @@
-import { apiRequest } from "@/lib/api-server";
-import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { ReportCard } from "@/components/ReportCard";
 import { REPORTS } from "@/lib/report-config";
 
@@ -9,9 +8,8 @@ type PageProps = {
 
 export default async function ReportsPage({ params }: PageProps) {
   const { orgSlug } = await params;
-  await getOrganizationContextOrRedirect(orgSlug);
 
-  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean } }> }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const permRes = await getPermissions(orgSlug);
   const canView = permRes.data?.modules.find((m) => m.key === "reports")?.permissions.can_view ?? false;
   if (!canView) return <p className="p-6 text-red-600">You do not have permission to view reports.</p>;
 

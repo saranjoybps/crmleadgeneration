@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import CalculateForm from "./calculate-form";
 
 type CalculatePageProps = {
@@ -10,23 +11,22 @@ type CalculatePageProps = {
 export default async function CalculatePage({ params, searchParams }: CalculatePageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
-
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
-  const payrollPerm = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions ?? { can_view: false };
-  if (!payrollPerm.can_view) {
-    return <p className="p-6 text-red-600">You do not have permission to view payroll.</p>;
-  }
-
   const now = new Date();
   const selMonth = query.month ? parseInt(query.month) : now.getMonth() + 1;
   const selYear = query.year ? parseInt(query.year) : now.getFullYear();
 
-  const { data: employees } = await apiRequest<Array<{ id: string; user_id: string; user?: { full_name?: string; email?: string } }>>(
-    `/api/v1/payroll/employees?status=active`, { orgSlug }
-  );
+  const [orgAndPerms, { data: employees }] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+    apiRequest<Array<{ id: string; user_id: string; user?: { full_name?: string; email?: string } }>>(
+      `/api/v1/payroll/employees?status=active`, { orgSlug }
+    ),
+  ]);
+
+  const permsRes = orgAndPerms[1];
+  const payrollPerm = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions ?? { can_view: false };
+  if (!payrollPerm.can_view) {
+    return <p className="p-6 text-red-600">You do not have permission to view payroll.</p>;
+  }
 
   let calculation: Record<string, unknown> | null = null;
   if (query.user_id) {

@@ -1,8 +1,8 @@
 "use client";
 
 import { format } from "date-fns";
-import { useState, useMemo, useCallback } from "react";
-import { Eye, EyeOff, KeyRound, Plus, Search, Share2, Trash2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { KeyRound, Plus, Search, Share2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -47,15 +47,10 @@ type VaultContentProps = {
     success?: string;
     modal?: "create" | "detail" | "delete" | "share";
     credential_id?: string;
-    reveal?: "1";
   };
   credentials: CredentialRow[];
   users: UserRow[];
   vaultPerm: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
-  selected: CredentialRow | undefined;
-  selectedDetail: CredentialRow | null;
-  shares: Array<{ user_id: string; access: "grant" | "deny"; user?: { id: string; email: string; full_name?: string } }>;
-  shareMap: Map<string, string>;
 };
 
 export default function VaultContent({
@@ -64,10 +59,6 @@ export default function VaultContent({
   credentials,
   users,
   vaultPerm,
-  selected,
-  selectedDetail,
-  shares,
-  shareMap,
 }: VaultContentProps) {
   const [modal, setModal] = useState<ModalState>(
     query.modal === "create" && vaultPerm.can_create
@@ -80,10 +71,33 @@ export default function VaultContent({
             ? { type: "share", credential_id: query.credential_id }
             : null,
   );
-  const [reveal, setReveal] = useState(query.reveal === "1");
-  const [revealedPassword, setRevealedPassword] = useState<string | null>(
-    selectedDetail?.password || null,
-  );
+
+  const [detailData, setDetailData] = useState<CredentialRow | null>(null);
+  const [shares, setShares] = useState<Array<{ user_id: string; access: "grant" | "deny"; user?: { id: string; email: string; full_name?: string } }>>([]);
+
+  useEffect(() => {
+    const m = modal;
+    if (!m || m.type !== "detail") { setDetailData(null); return; }
+    const cred = credentials.find((c) => c.id === m.credential_id);
+    if (!cred) return;
+    apiRequest<CredentialRow>(`/api/v1/vault/${encodeURIComponent(cred.id)}`, {
+      orgSlug, headers: { "X-Reveal-Password": "true" },
+    }).then((res) => {
+      if (res.data) setDetailData(res.data);
+    });
+  }, [modal && modal.type === "detail" ? modal.credential_id : null]);
+
+  useEffect(() => {
+    const m = modal;
+    if (!m || m.type !== "share") { setShares([]); return; }
+    apiRequest<Array<{ user_id: string; access: "grant" | "deny"; user?: { id: string; email: string; full_name?: string } }>>(
+      `/api/v1/vault/${encodeURIComponent(m.credential_id)}/shares`, { orgSlug }
+    ).then((res) => {
+      if (res.data) setShares(res.data);
+    });
+  }, [modal && modal.type === "share" ? modal.credential_id : null]);
+
+  const shareMap = useMemo(() => new Map(shares.map((s) => [s.user_id, s.access])), [shares]);
 
   const selectedCredential = useMemo(() => {
     if (!modal || modal.type === "create") return null;
@@ -92,31 +106,8 @@ export default function VaultContent({
 
   const detailCredential = useMemo(() => {
     if (!modal || modal.type !== "detail") return null;
-    if (selectedDetail?.id === modal.credential_id) return selectedDetail;
-    return selectedCredential;
-  }, [modal, selectedDetail, selectedCredential]);
-
-  const handleUnmask = useCallback(async () => {
-    if (!detailCredential) return;
-    if (revealedPassword) {
-      setReveal(true);
-      return;
-    }
-    try {
-      const res = await apiRequest<{ password?: string }>(
-        `/api/v1/vault/${encodeURIComponent(detailCredential.id)}`,
-        { orgSlug, headers: { "X-Reveal-Password": "true" } },
-      );
-      setRevealedPassword(res.data?.password ?? null);
-      setReveal(true);
-    } catch {
-      // silent
-    }
-  }, [detailCredential, revealedPassword]);
-
-  const handleMask = useCallback(() => {
-    setReveal(false);
-  }, []);
+    return detailData ?? selectedCredential;
+  }, [modal, detailData, selectedCredential]);
 
   return (
     <div className="space-y-6">
@@ -203,11 +194,7 @@ export default function VaultContent({
             <div className="grid gap-3 md:grid-cols-2"><Input label="Username" name="username" defaultValue={detailCredential.username || ""} /><Input label="Email ID" name="email_id" defaultValue={detailCredential.email_id || ""} /></div>
             <div className="rounded-xl border border-soft p-3">
               <p className="text-xs font-semibold text-muted">Password</p>
-              <p className="font-mono text-sm">{reveal ? (revealedPassword || detailCredential.password_masked) : detailCredential.password_masked}</p>
-              <div className="mt-2 flex gap-2">
-                <Button variant="outline" type="button" onClick={handleUnmask}><Eye className="h-4 w-4" /> Unmask</Button>
-                <Button variant="outline" type="button" onClick={handleMask}><EyeOff className="h-4 w-4" /> Mask</Button>
-              </div>
+              <p className="font-mono text-sm">{detailCredential.password || detailCredential.password_masked}</p>
             </div>
             <Input label="Set New Password (optional)" name="password" type="password" />
             <Input label="URL / Login URL" name="login_url" defaultValue={detailCredential.login_url || ""} />

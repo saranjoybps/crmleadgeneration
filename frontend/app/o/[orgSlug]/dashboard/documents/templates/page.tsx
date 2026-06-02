@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api-server";
+import { getPermissions } from "@/lib/api-data";
 import TemplatesContent from "./TemplatesContent";
 import type { DocumentTemplate } from "@/lib/types";
 
@@ -31,14 +32,9 @@ export default async function TemplatesPage({ params, searchParams }: TemplatesP
   });
 
   const [permissionsRes, templatesRes, typesRes] = await Promise.all([
-    apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }> }>(
-      "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
-    ),
-    apiRequest<DocumentTemplate[]>(templatesPath, { orgSlug, cache: "no-store" }),
-    apiRequest<Array<{ id: string; name: string; key: string }>>("/api/v1/document-types", {
-      orgSlug,
-      cache: "no-store",
-    }),
+    getPermissions(orgSlug),
+    apiRequest<DocumentTemplate[]>(templatesPath, { orgSlug }),
+    apiRequest<Array<{ id: string; name: string; key: string }>>("/api/v1/document-types", { orgSlug }),
   ]);
 
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;

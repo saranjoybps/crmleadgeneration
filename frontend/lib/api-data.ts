@@ -14,5 +14,10 @@ export const getPermissions = cache(async (orgSlug: string) => {
         can_delete: boolean;
       };
     }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  }>("/api/v1/auth/permissions", { orgSlug });
+});
+
+export const getOrganizationContext = cache(async (orgSlug: string) => {
+  const { getOrganizationContextOrRedirect } = await import("@/lib/organizations");
+  return getOrganizationContextOrRedirect(orgSlug);
 });

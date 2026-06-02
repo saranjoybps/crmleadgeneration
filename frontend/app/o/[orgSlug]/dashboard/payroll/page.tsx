@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Receipt, Users, IndianRupee, TrendingUp, Building2, ArrowUpRight, Cog, Calculator } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
-import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { PayrollSummary, PayrollSettings } from "@/lib/types";
@@ -15,20 +15,19 @@ type PayrollPageProps = {
 
 export default async function PayrollOverviewPage({ params }: PayrollPageProps) {
   const { orgSlug } = await params;
-  await getOrganizationContextOrRedirect(orgSlug);
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [permsRes, { data: summary }, { data: settings }] = await Promise.all([
+    getPermissions(orgSlug),
+    apiRequest<PayrollSummary>("/api/v1/payroll/summary", { orgSlug }),
+    apiRequest<PayrollSettings>("/api/v1/payroll/settings", { orgSlug }),
+  ]);
+
   const payrollPerm = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions ?? {
     can_view: false, can_create: false, can_edit: false,
   };
   if (!payrollPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view payroll.</p>;
   }
-
-  const { data: summary } = await apiRequest<PayrollSummary>("/api/v1/payroll/summary", { orgSlug });
-  const { data: settings } = await apiRequest<PayrollSettings>("/api/v1/payroll/settings", { orgSlug });
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

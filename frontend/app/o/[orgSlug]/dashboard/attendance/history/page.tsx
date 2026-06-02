@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import type { AttendanceRecord } from "@/lib/types";
 import HistoryContent from "./HistoryContent";
 
@@ -19,11 +20,17 @@ type HistoryPageProps = {
 export default async function HistoryPage({ params, searchParams }: HistoryPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
+  const paramsObj = new URLSearchParams();
+  if (query.from) paramsObj.set("from_date", query.from);
+  if (query.to) paramsObj.set("to_date", query.to);
+  if (query.status) paramsObj.set("status", query.status);
+  if (query.user_id) paramsObj.set("user_id", query.user_id);
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_edit: boolean; can_delete: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [orgAndPerms] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+  ]);
+
+  const permsRes = orgAndPerms[1];
   const attPerm = permsRes.data?.modules.find((m) => m.key === "attendance")?.permissions ?? {
     can_view: false, can_edit: false, can_delete: false,
   };
@@ -33,12 +40,6 @@ export default async function HistoryPage({ params, searchParams }: HistoryPageP
 
   const showAll = query.all === "true" && (permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_view ?? false);
   const canViewAllUsers = permsRes.data?.modules.find((m) => m.key === "users")?.permissions.can_view ?? false;
-
-  const paramsObj = new URLSearchParams();
-  if (query.from) paramsObj.set("from_date", query.from);
-  if (query.to) paramsObj.set("to_date", query.to);
-  if (query.status) paramsObj.set("status", query.status);
-  if (query.user_id) paramsObj.set("user_id", query.user_id);
 
   const apiPath = showAll
     ? `/api/v1/attendance/records/all?${paramsObj.toString()}`

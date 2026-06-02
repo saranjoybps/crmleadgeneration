@@ -54,7 +54,7 @@ export async function apiRequest<T>(
       method: options.method ?? "GET",
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
-      cache: options.cache ?? "no-store",
+      cache: options.cache ?? "force-cache",
     });
 
     const json = await resp.json().catch(() => ({}));

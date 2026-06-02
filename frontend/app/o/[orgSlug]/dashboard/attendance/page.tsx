@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Clock, LogIn, LogOut, Calendar, Info, CheckCircle2, AlertTriangle, XCircle, Timer } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
-import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -90,25 +90,19 @@ function formatTime(iso: string | null): string {
 export default async function AttendancePage({ params, searchParams }: AttendancePageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
 
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [permissionsResponse, { data: todayRecord, error: todayError }, { data: recentRecords }] = await Promise.all([
+    getPermissions(orgSlug),
+    apiRequest<AttendanceRecord>("/api/v1/attendance/today", { orgSlug }),
+    apiRequest<AttendanceRecord[]>("/api/v1/attendance/records", { orgSlug }),
+  ]);
+
   const attPerm = permissionsResponse.data?.modules.find((m) => m.key === "attendance")?.permissions ?? {
     can_view: false, can_create: false, can_edit: false,
   };
   if (!attPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view attendance.</p>;
   }
-
-  const { data: todayRecord, error: todayError } = await apiRequest<AttendanceRecord>(
-    "/api/v1/attendance/today", { orgSlug }
-  );
-
-  const { data: recentRecords } = await apiRequest<AttendanceRecord[]>(
-    "/api/v1/attendance/records", { orgSlug }
-  );
 
   const isOnLeave = todayRecord?.status === "on_leave";
   const isCheckedIn = todayRecord && !todayRecord.check_out_time && !isOnLeave;

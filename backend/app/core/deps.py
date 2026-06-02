@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from typing import Any
+import json
 import logging
 
 from fastapi import Depends, Header, HTTPException
 from supabase import Client
 
 from app.core.auth import get_authenticated_access_token, get_authenticated_user_id
+from app.core.cache import _get_client, cache_key
 from app.core.supabase_client import get_supabase_client
 
 logger = logging.getLogger("joyerp.auth_flow")
@@ -77,13 +79,26 @@ def require_module_permission(module_key: str, action: str):
         # Owner always has access
         if ctx.role_key == "owner":
             return ctx
-        
+
+        # Check Redis cache for permission
+        cache_client = _get_client()
+        ck = cache_key("joy", "perm", ctx.tenant_id, ctx.app_user_id, module_key, action)
+        if cache_client is not None:
+            cached = cache_client.get(ck)
+            if cached == "true":
+                return ctx
+            if cached == "false":
+                raise HTTPException(status_code=403, detail="Forbidden")
+
         supabase: Client = get_supabase_client(access_token=ctx.access_token)
         has_perm = supabase.rpc(
             "has_module_permission",
             {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": action}
         ).execute()
-        if not has_perm.data:
+        result = bool(has_perm.data)
+        if cache_client is not None:
+            cache_client.set(ck, "true" if result else "false", ttl=300)
+        if not result:
             raise HTTPException(status_code=403, detail="Forbidden")
         return ctx
 
@@ -96,13 +111,28 @@ def require_any_module_permission(module_keys: list[str], action: str):
         if ctx.role_key == "owner":
             return ctx
 
+        cache_client = _get_client()
         supabase: Client = get_supabase_client(access_token=ctx.access_token)
+
         for module_key in module_keys:
+            # Check Redis cache per module
+            ck = cache_key("joy", "perm", ctx.tenant_id, ctx.app_user_id, module_key, action)
+            if cache_client is not None:
+                cached = cache_client.get(ck)
+                if cached == "true":
+                    return ctx
+                if cached == "false":
+                    continue
+
             has_perm = supabase.rpc(
                 "has_module_permission",
                 {"p_tenant_id": ctx.tenant_id, "p_module_key": module_key, "p_action": action}
             ).execute()
-            if has_perm.data:
+            result = bool(has_perm.data)
+            if cache_client is not None:
+                cache_client.set(ck, "true" if result else "false", ttl=300)
+
+            if result:
                 return ctx
 
         raise HTTPException(status_code=403, detail="Forbidden")

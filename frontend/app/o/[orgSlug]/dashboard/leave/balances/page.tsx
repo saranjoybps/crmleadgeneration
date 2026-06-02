@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { AllLeaveBalances } from "@/lib/types";
@@ -15,20 +16,20 @@ type BalancesPageProps = {
 export default async function BalancesPage({ params, searchParams }: BalancesPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
+  const year = query.year || String(new Date().getFullYear());
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [orgAndPerms, { data: allBalances }] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+    apiRequest<AllLeaveBalances>(`/api/v1/leave-balances/all?year=${year}`, { orgSlug }),
+  ]);
+
+  const permsRes = orgAndPerms[1];
   const leavePerm = permsRes.data?.modules.find((m) => m.key === "leave")?.permissions ?? { can_view: false };
   const usersPerm = permsRes.data?.modules.find((m) => m.key === "users")?.permissions ?? { can_view: false };
 
   if (!leavePerm.can_view || !usersPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view balances.</p>;
   }
-
-  const year = query.year || String(new Date().getFullYear());
-  const { data: allBalances } = await apiRequest<AllLeaveBalances>(`/api/v1/leave-balances/all?year=${year}`, { orgSlug });
 
   if (!allBalances) {
     return <p className="p-6 text-red-600">Failed to load balances.</p>;

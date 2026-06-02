@@ -11,6 +11,7 @@ import FullscreenToggle from "@/components/FullscreenToggle";
 import HelpButton from "@/components/HelpButton";
 import { PermissionsProvider } from "@/lib/permissions";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { createClient } from "@/lib/supabase/server";
 import { apiRequest } from "@/lib/api-server";
 import DashboardLoading from "./loading";
@@ -20,56 +21,39 @@ type DashboardLayoutProps = {
   params: Promise<{ orgSlug: string }>;
 };
 
-export default async function DashboardLayout({ children, params }: DashboardLayoutProps) {
-  const { orgSlug } = await params;
+async function getLayoutData(orgSlug: string) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const orgPromise = getOrganizationContextOrRedirect(orgSlug);
+  const permissionsPromise = getPermissions(orgSlug);
+
+  const [org, permissionsResponse] = await Promise.all([orgPromise, permissionsPromise]);
+
+  const supabase2 = await createClient();
+  const userPromise = supabase2.auth.getUser();
+  const avatarPromise = supabase2.from("users").select("avatar_url").eq("auth_user_id", (await userPromise).data.user?.id ?? "").maybeSingle();
+  const departmentPromise = apiRequest<{ department_id: string | null; department_name: string | null }>("/api/v1/auth/department", { orgSlug });
+
+  const [{ data: { user } }, { data: dbUser }, departmentResponse] = await Promise.all([userPromise, avatarPromise, departmentPromise]);
 
   if (!user) {
     redirect("/login");
   }
 
-  const org = await getOrganizationContextOrRedirect(orgSlug);
   const profileInitial = (user.email?.trim().charAt(0) || "U").toUpperCase();
-
-  const permissionsResponse = await apiRequest<{
-    role: { key: string; label: string };
-    modules: Array<{
-      key: string;
-      label: string;
-      permissions: {
-        can_view: boolean;
-        can_create: boolean;
-        can_edit: boolean;
-        can_delete: boolean;
-      };
-    }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
-
   const permissionModules = permissionsResponse.data?.modules ?? [];
+  const avatarUrl = dbUser?.avatar_url;
+  const departmentName = departmentResponse.error ? undefined : departmentResponse.data?.department_name || undefined;
+
+  return { user, org, permissionsResponse, permissionModules, avatarUrl, departmentName, profileInitial };
+}
+
+export default async function DashboardLayout({ children, params }: DashboardLayoutProps) {
+  const { orgSlug } = await params;
+  const { user, org, permissionsResponse, permissionModules, avatarUrl, departmentName, profileInitial } = await getLayoutData(orgSlug);
+
   const allowedModuleKeys = new Set(
     permissionModules.filter((module) => module.permissions.can_view).map((module) => module.key),
   );
-
-
-  // Fetch avatar from users table as requested
-  const { data: dbUser } = await supabase
-    .from("users")
-    .select("avatar_url")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  const avatarUrl = dbUser?.avatar_url;
-
-  // Fetch user's department information
-  const departmentResponse = await apiRequest<{
-    department_id: string | null;
-    department_name: string | null;
-  }>("/api/v1/auth/department", { orgSlug, cache: "no-store" });
-
-  const departmentName = departmentResponse.error ? undefined : departmentResponse.data?.department_name || undefined;
 
   return (
     <PermissionsProvider permissions={permissionsResponse.data || { role: { key: org.role, label: "" }, modules: [] }}>

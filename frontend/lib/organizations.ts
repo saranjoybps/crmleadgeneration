@@ -1,9 +1,10 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import type { OrganizationContext } from "@/lib/types";
 
-export async function getOrCreatePrimaryOrganization(): Promise<OrganizationContext> {
+async function _getOrCreatePrimaryOrganization(): Promise<OrganizationContext> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("ensure_user_tenant", { p_tenant_slug: null });
   if (error || !data?.length) {
@@ -22,7 +23,9 @@ export async function getOrCreatePrimaryOrganization(): Promise<OrganizationCont
   };
 }
 
-export async function getOrganizationContextOrRedirect(orgSlug: string): Promise<OrganizationContext> {
+export const getOrCreatePrimaryOrganization = cache(_getOrCreatePrimaryOrganization);
+
+async function _getOrganizationContextOrRedirect(orgSlug: string): Promise<OrganizationContext> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -50,6 +53,8 @@ export async function getOrganizationContextOrRedirect(orgSlug: string): Promise
     departments,
   };
 }
+
+export const getOrganizationContextOrRedirect = cache(_getOrganizationContextOrRedirect);
 
 export function canManageOrganizationUsers(role: string): boolean {
   return role === "owner" || role === "admin";

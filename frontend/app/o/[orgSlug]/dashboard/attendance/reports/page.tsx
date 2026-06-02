@@ -3,6 +3,7 @@ import { Info, Calendar, ArrowLeft, TrendingUp } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -43,11 +44,12 @@ function formatTime(iso: string | null): string {
 export default async function ReportsPage({ params, searchParams }: ReportsPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [orgAndPerms] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+  ]);
+
+  const permsRes = orgAndPerms[1];
   const attPerm = permsRes.data?.modules.find((m) => m.key === "attendance")?.permissions ?? { can_view: false };
   if (!attPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view reports.</p>;

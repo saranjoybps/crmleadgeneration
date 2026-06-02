@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api-server";
+import { getPermissions } from "@/lib/api-data";
 import TypesContent from "./TypesContent";
 import type { DocumentType } from "@/lib/types";
 
@@ -15,10 +16,8 @@ export default async function DocumentTypesPage({ params, searchParams }: Docume
   const query = await searchParams;
 
   const [permissionsRes, typesRes] = await Promise.all([
-    apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }> }>(
-      "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
-    ),
-    apiRequest<DocumentType[]>("/api/v1/document-types", { orgSlug, cache: "no-store" }),
+    getPermissions(orgSlug),
+    apiRequest<DocumentType[]>("/api/v1/document-types", { orgSlug }),
   ]);
 
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;

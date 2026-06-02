@@ -14,6 +14,8 @@ class Settings:
     vault_encryption_key: str
     openai_api_key: str = ""
     openai_model: str = "gpt-4o"
+    upstash_redis_rest_url: str = ""
+    upstash_redis_rest_token: str = ""
 
 
 @lru_cache
@@ -32,4 +34,6 @@ def get_settings() -> Settings:
         vault_encryption_key=os.getenv("VAULT_ENCRYPTION_KEY", ""),
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        upstash_redis_rest_url=os.getenv("UPSTASH_REDIS_REST_URL", ""),
+        upstash_redis_rest_token=os.getenv("UPSTASH_REDIS_REST_TOKEN", ""),
     )

@@ -5,6 +5,7 @@ import { Info, Cog } from "lucide-react";
 
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { PayrollSettings } from "@/lib/types";
@@ -54,19 +55,18 @@ async function saveSettingsAction(formData: FormData) {
 export default async function PayrollSettingsPage({ params, searchParams }: SettingsPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
+  const [orgAndPerms, { data: settings }] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+    apiRequest<PayrollSettings>("/api/v1/payroll/settings", { orgSlug }),
+  ]);
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_edit: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const permsRes = orgAndPerms[1];
   const payrollPerm = permsRes.data?.modules.find((m) => m.key === "payroll")?.permissions ?? {
     can_view: false, can_edit: false,
   };
   if (!payrollPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view payroll.</p>;
   }
-
-  const { data: settings } = await apiRequest<PayrollSettings>("/api/v1/payroll/settings", { orgSlug });
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

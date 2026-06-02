@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import type { LeaveType } from "@/lib/types";
 import TypesContent from "./TypesContent";
 
@@ -11,19 +12,18 @@ type TypesPageProps = {
 export default async function TypesPage({ params, searchParams }: TypesPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
+  const [orgAndPerms, { data: leaveTypes }] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
+    apiRequest<LeaveType[]>("/api/v1/leave-types", { orgSlug }),
+  ]);
 
-  const permsRes = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const permsRes = orgAndPerms[1];
   const leavePerm = permsRes.data?.modules.find((m) => m.key === "leave")?.permissions ?? {
     can_view: false, can_create: false, can_edit: false, can_delete: false,
   };
   if (!leavePerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission.</p>;
   }
-
-  const { data: leaveTypes } = await apiRequest<LeaveType[]>("/api/v1/leave-types", { orgSlug });
 
   return (
     <TypesContent

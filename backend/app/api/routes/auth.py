@@ -2,14 +2,16 @@ from fastapi import APIRouter, Depends
 import logging
 
 from app.api.utils import response
+from app.core.cache import cached, invalidate_pattern
 from app.core.deps import RequestContext, get_request_context, require_roles
 from app.core.supabase_client import get_supabase_client
 from app.schemas.common import InviteCreate, RoleAssignment
 from app.services.auth import AuthService
 from app.services.rbac import RBACService
 
-router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger("joyerp.auth")
+
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup")
@@ -24,8 +26,22 @@ def login_bridge(ctx: RequestContext = Depends(get_request_context)):
 
 @router.get("/permissions")
 def get_user_permissions(ctx: RequestContext = Depends(get_request_context)):
+    from app.core.cache import cache_key, _get_client
+    import json
+
+    cache_client = _get_client()
+    ck = cache_key("joy", "permissions", ctx.tenant_id, ctx.app_user_id)
+    if cache_client is not None:
+        cached = cache_client.get(ck)
+        if cached is not None:
+            return response(json.loads(cached))
+
     supabase = get_supabase_client(access_token=ctx.access_token)
     permissions = RBACService.get_current_user_permissions(supabase, ctx)
+
+    if cache_client is not None:
+        cache_client.set(ck, json.dumps(permissions, default=str), ttl=300)
+
     dashboard_perm = next(
         (m.get("permissions") for m in permissions.get("modules", []) if m.get("key") == "dashboard"),
         None,

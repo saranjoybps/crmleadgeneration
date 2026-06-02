@@ -218,7 +218,7 @@ class PayrollService:
             .maybe_single()
             .execute()
         )
-        return res.data
+        return res.data if res else None
 
     @staticmethod
     def upsert_settings(supabase: Client, payload: PayrollSettingsUpdate, ctx: RequestContext):

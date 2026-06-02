@@ -2,8 +2,8 @@ import { Suspense } from "react";
 import { MessageSquare } from "lucide-react";
 import dynamic from "next/dynamic";
 
-import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { createClient } from "@/lib/supabase/server";
 
 const ChatPageClient = dynamic(() => import("@/components/chat/ChatPageClient").then((m) => m.ChatPageClient), {
@@ -20,11 +20,11 @@ type PageProps = {
 
 export default async function ChatPage({ params }: PageProps) {
   const { orgSlug } = await params;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
 
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+  const [org, permissionsResponse] = await Promise.all([
+    getOrganizationContextOrRedirect(orgSlug),
+    getPermissions(orgSlug),
+  ]);
 
   const chatPerm = permissionsResponse.data?.modules.find((m) => m.key === "chat")?.permissions ?? {
     can_view: false, can_create: false, can_edit: false, can_delete: false,
@@ -35,18 +35,6 @@ export default async function ChatPage({ params }: PageProps) {
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted">Please log in to use chat.</p>
-      </div>
-    );
-  }
-
   const { data: appUserId } = await supabase.rpc("ensure_app_user");
   const tenantId = org.organization_id;
 

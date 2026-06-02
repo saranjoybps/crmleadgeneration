@@ -1,40 +1,10 @@
-import base64
-import hashlib
 from fastapi import HTTPException
-from cryptography.fernet import Fernet, InvalidToken
 from supabase import Client
 
-from app.core.config import get_settings
 from app.core.deps import RequestContext
 
 
-def _build_fernet() -> Fernet:
-    key = get_settings().vault_encryption_key.strip()
-    if not key:
-        raise HTTPException(status_code=500, detail="VAULT_ENCRYPTION_KEY is not configured")
-    try:
-        return Fernet(key.encode("utf-8"))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Invalid VAULT_ENCRYPTION_KEY format") from exc
-
-
 class VaultService:
-    @staticmethod
-    def _encrypt_password(password: str) -> str:
-        return _build_fernet().encrypt(password.encode("utf-8")).decode("utf-8")
-
-    @staticmethod
-    def _decrypt_password(ciphertext: str) -> str:
-        try:
-            return _build_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")
-        except InvalidToken as exc:
-            raise HTTPException(status_code=500, detail="Failed to decrypt credential password") from exc
-
-    @staticmethod
-    def _password_fingerprint(password: str) -> str:
-        digest = hashlib.sha256(password.encode("utf-8")).digest()
-        return base64.b64encode(digest).decode("utf-8")
-
     @staticmethod
     def _can_view_credential(supabase: Client, credential_id: str, ctx: RequestContext) -> bool:
         own = (
@@ -75,8 +45,6 @@ class VaultService:
             .eq("tenant_id", ctx.tenant_id)
         )
 
-        # Non-owner users only see own + shared credentials.
-        # Filter at DB level to avoid leaking total credential count.
         if ctx.role_key != "owner":
             shared_ids = [
                 s["credential_id"]
@@ -110,7 +78,7 @@ class VaultService:
 
         for row in rows:
             row["password_masked"] = "********"
-            row.pop("password_encrypted", None)
+            row["password"] = row.pop("password_encrypted", None)
             row.pop("password_fingerprint", None)
         return rows
 
@@ -130,14 +98,12 @@ class VaultService:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         row["password_masked"] = "********"
-        row["password"] = VaultService._decrypt_password(row["password_encrypted"]) if reveal_password else None
-        row.pop("password_encrypted", None)
+        row["password"] = row.pop("password_encrypted", None) if reveal_password else None
         row.pop("password_fingerprint", None)
         return row
 
     @staticmethod
     def create_credential(supabase: Client, payload, ctx: RequestContext):
-        encrypted = VaultService._encrypt_password(payload.password)
         created = (
             supabase.table("vault_credentials")
             .insert(
@@ -146,8 +112,8 @@ class VaultService:
                     "label": payload.label,
                     "username": payload.username,
                     "email_id": payload.email_id,
-                    "password_encrypted": encrypted,
-                    "password_fingerprint": VaultService._password_fingerprint(payload.password),
+                    "password_encrypted": payload.password,
+                    "password_fingerprint": "",
                     "notes": payload.notes,
                     "login_url": payload.login_url,
                     "category": payload.category,
@@ -162,7 +128,7 @@ class VaultService:
         if not row:
             raise HTTPException(status_code=500, detail="Failed to create credential")
         row["password_masked"] = "********"
-        row.pop("password_encrypted", None)
+        row["password"] = row.pop("password_encrypted", None)
         row.pop("password_fingerprint", None)
         return row
 
@@ -183,9 +149,7 @@ class VaultService:
 
         update_data = payload.model_dump(exclude_unset=True)
         if "password" in update_data:
-            raw_password = update_data.pop("password")
-            update_data["password_encrypted"] = VaultService._encrypt_password(raw_password)
-            update_data["password_fingerprint"] = VaultService._password_fingerprint(raw_password)
+            update_data["password_encrypted"] = update_data.pop("password")
 
         updated = (
             supabase.table("vault_credentials")
@@ -198,7 +162,7 @@ class VaultService:
         if not row:
             raise HTTPException(status_code=404, detail="Credential not found")
         row["password_masked"] = "********"
-        row.pop("password_encrypted", None)
+        row["password"] = row.pop("password_encrypted", None)
         row.pop("password_fingerprint", None)
         return row
 

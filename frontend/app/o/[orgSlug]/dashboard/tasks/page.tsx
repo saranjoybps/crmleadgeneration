@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api-server";
-import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { TasksContent } from "./TasksContent";
 
 type TasksPageProps = {
@@ -42,10 +42,21 @@ type UserRow = { id: string; email: string; full_name?: string };
 export default async function TasksPage({ params, searchParams }: TasksPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
+
+  const taskQueryParams = new URLSearchParams();
+  if (query.project_id) taskQueryParams.append("project_id", query.project_id);
+  if (query.user_id) taskQueryParams.append("user_id", query.user_id);
+  if (query.department_id) taskQueryParams.append("department_id", query.department_id);
+  if (query.ticket_id) taskQueryParams.append("ticket_id", query.ticket_id);
+
+  const [permissionsResponse, ticketsRes, projectsRes, tasksRes, usersRes] = await Promise.all([
+    getPermissions(orgSlug),
+    apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
+    apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
+    apiRequest<TaskRow[]>(`/api/v1/tasks?${taskQueryParams.toString()}`, { orgSlug }),
+    apiRequest<UserRow[]>("/api/v1/users?limit=200&offset=0", { orgSlug }),
+  ]);
+
   const tasksPerm = permissionsResponse.data?.modules.find((m) => m.key === "tasks")?.permissions ?? {
     can_view: false,
     can_create: false,
@@ -55,19 +66,6 @@ export default async function TasksPage({ params, searchParams }: TasksPageProps
   if (!tasksPerm.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view tasks.</p>;
   }
-
-  const taskQueryParams = new URLSearchParams();
-  if (query.project_id) taskQueryParams.append("project_id", query.project_id);
-  if (query.user_id) taskQueryParams.append("user_id", query.user_id);
-  if (query.department_id) taskQueryParams.append("department_id", query.department_id);
-  if (query.ticket_id) taskQueryParams.append("ticket_id", query.ticket_id);
-
-  const [ticketsRes, projectsRes, tasksRes, usersRes] = await Promise.all([
-    apiRequest<TicketRow[]>("/api/v1/tickets", { orgSlug }),
-    apiRequest<ProjectRow[]>("/api/v1/projects", { orgSlug }),
-    apiRequest<TaskRow[]>(`/api/v1/tasks?${taskQueryParams.toString()}`, { orgSlug }),
-    apiRequest<UserRow[]>("/api/v1/users?limit=200&offset=0", { orgSlug }),
-  ]);
 
   if (tasksRes.error) return <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">{tasksRes.error}</div>;
 

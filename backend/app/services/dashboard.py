@@ -5,6 +5,7 @@ from collections import defaultdict
 from supabase import Client
 from postgrest.exceptions import APIError
 
+from app.core.cache import cached, invalidate_pattern
 from app.core.deps import RequestContext
 from app.services.access_scope import AccessScopeService
 
@@ -14,6 +15,7 @@ logger = logging.getLogger("joyerp.dashboard")
 class DashboardService:
 
     @staticmethod
+    @cached(ttl=30, key_prefix="dashboard")
     def get_summary(supabase: Client, ctx: RequestContext):
         allowed_project_ids = AccessScopeService.get_accessible_project_ids(supabase, ctx)
         now = datetime.now(timezone.utc)
@@ -345,6 +347,7 @@ class DashboardService:
         except APIError:
             logger.warning("Failed to fetch logged hours for dashboard")
 
+        # Write-through cache: store result in Redis via @cached decorator
         return {
             "active_projects": projects_count or 0,
             "open_tickets": open_tickets or 0,

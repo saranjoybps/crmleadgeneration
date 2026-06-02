@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 import { apiRequest } from "@/lib/api-server";
-import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { getReportConfig } from "@/lib/report-config";
 import { ReportTable } from "@/components/ReportTable";
 import { Button } from "@/components/ui/Button";
@@ -16,14 +16,9 @@ type PageProps = {
 export default async function ReportDetailPage({ params, searchParams }: PageProps) {
   const { orgSlug, key } = await params;
   const sp = await searchParams;
-  await getOrganizationContextOrRedirect(orgSlug);
 
   const config = getReportConfig(key);
   if (!config) notFound();
-
-  const permRes = await apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean } }> }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
-  const canView = permRes.data?.modules.find((m) => m.key === "reports")?.permissions.can_view ?? false;
-  if (!canView) return <p className="p-6 text-red-600">You do not have permission to view reports.</p>;
 
   const paramsStr = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) {
@@ -31,10 +26,16 @@ export default async function ReportDetailPage({ params, searchParams }: PagePro
   }
   const qs = paramsStr.toString();
 
-  const { data: rawData } = await apiRequest<Record<string, unknown>[]>(
-    `/api/v1/reports/${key}${qs ? `?${qs}` : ""}`,
-    { orgSlug, cache: "no-store" }
-  );
+  const [permRes, { data: rawData }] = await Promise.all([
+    getPermissions(orgSlug),
+    apiRequest<Record<string, unknown>[]>(
+      `/api/v1/reports/${key}${qs ? `?${qs}` : ""}`,
+      { orgSlug }
+    ),
+  ]);
+
+  const canView = permRes.data?.modules.find((m) => m.key === "reports")?.permissions.can_view ?? false;
+  if (!canView) return <p className="p-6 text-red-600">You do not have permission to view reports.</p>;
 
   return (
     <div className="space-y-6">

@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from supabase import Client
 import logging
 
+from app.core.cache import invalidate_pattern
 from app.core.deps import RequestContext
 from app.schemas.rbac import RoleCreate, RoleUpdate, ModuleCreate, PermissionUpdate
 
@@ -384,6 +385,9 @@ class RBACService:
                 "can_edit": current["can_edit"],
                 "can_delete": current["can_delete"],
             })
+
+        # Invalidate permissions cache for all affected users
+        invalidate_pattern(f"joy:permissions:{ctx.tenant_id}:*")
 
         logger.info(
             "[RBAC][UPDATE_PERMS] tenant_id=%s role_key=%s source_role_id=%s target_role_ids=%s module_key=%s payload=%s",

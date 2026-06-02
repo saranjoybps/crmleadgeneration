@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-server";
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
+import { getPermissions } from "@/lib/api-data";
 import { ProjectsContent } from "./ProjectsContent";
 
 type ProjectsPageProps = {
@@ -15,21 +16,19 @@ type UserRow = { id: string; email: string; full_name?: string };
 export default async function ProjectsPage({ params, searchParams }: ProjectsPageProps) {
   const { orgSlug } = await params;
   const query = await searchParams;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
-
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
-  
-  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions || { can_view: false, can_create: false, can_edit: false, can_delete: false };
-
   const projectPath = query.department_id ? `/api/v1/projects?department_id=${encodeURIComponent(query.department_id)}` : "/api/v1/projects";
-  const [projectsRes, usersRes, membersRes, departmentsRes] = await Promise.all([
+
+  const [orgAndPerms, projectsRes, usersRes, membersRes, departmentsRes] = await Promise.all([
+    Promise.all([getOrganizationContextOrRedirect(orgSlug), getPermissions(orgSlug)]),
     apiRequest<ProjectRow[]>(projectPath, { orgSlug }),
     apiRequest<UserRow[]>("/api/v1/users?limit=200&offset=0", { orgSlug }),
     apiRequest<MemberRow[]>("/api/v1/projects/all-members", { orgSlug }),
     apiRequest<Array<{ id: string; name: string }>>("/api/v1/departments", { orgSlug }),
   ]);
+
+  const permissionsResponse = orgAndPerms[1];
+
+  const projectsPermissions = permissionsResponse.data?.modules.find(m => m.key === "projects")?.permissions || { can_view: false, can_create: false, can_edit: false, can_delete: false };
 
   if (!projectsPermissions.can_view) {
     return <p className="p-6 text-red-600">You do not have permission to view projects.</p>;

@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api-server";
+import { getPermissions } from "@/lib/api-data";
 import DocumentsContent from "./DocumentsContent";
 import type { GeneratedDocument } from "@/lib/types";
 
@@ -37,14 +38,9 @@ export default async function DocumentsPage({ params, searchParams }: DocumentsP
   });
 
   const [permissionsRes, docsRes, typesRes] = await Promise.all([
-    apiRequest<{ modules: Array<{ key: string; permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean } }> }>(
-      "/api/v1/auth/permissions", { orgSlug, cache: "no-store" }
-    ),
-    apiRequest<GeneratedDocument[]>(docsPath, { orgSlug, cache: "no-store" }),
-    apiRequest<Array<{ id: string; name: string; key: string }>>("/api/v1/document-types", {
-      orgSlug,
-      cache: "no-store",
-    }),
+    getPermissions(orgSlug),
+    apiRequest<GeneratedDocument[]>(docsPath, { orgSlug }),
+    apiRequest<Array<{ id: string; name: string; key: string }>>("/api/v1/document-types", { orgSlug }),
   ]);
 
   const docPerm = permissionsRes.data?.modules.find((m) => m.key === "documents")?.permissions;

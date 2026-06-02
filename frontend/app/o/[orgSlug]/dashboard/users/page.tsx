@@ -1,8 +1,6 @@
-import { Users as UsersIcon, Shield, Trash2, Info } from "lucide-react";
-
 import { getOrganizationContextOrRedirect } from "@/lib/organizations";
 import { createClient } from "@/lib/supabase/server";
-import { apiRequest } from "@/lib/api-server";
+import { getPermissions } from "@/lib/api-data";
 import UsersContent from "./UsersContent";
 
 export default async function UsersPage({ params, searchParams }: {
@@ -14,23 +12,19 @@ export default async function UsersPage({ params, searchParams }: {
   const initialError = query.error ?? null;
   const initialSuccess = query.success ?? null;
   const initialEditingUserId = query.edit_user_id ?? null;
-  const org = await getOrganizationContextOrRedirect(orgSlug);
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
 
-  const currentUserRes = await supabase.from("users").select("id").eq("auth_user_id", user?.id).maybeSingle();
+  const supabase = await createClient();
+  const org = await getOrganizationContextOrRedirect(orgSlug);
+
+  const [{ data: { user } }, permissionsResponse] = await Promise.all([
+    supabase.auth.getUser(),
+    getPermissions(orgSlug),
+  ]);
+
+  const currentUserRes = await supabase.from("users").select("id").eq("auth_user_id", user?.id ?? "").maybeSingle();
   const currentAppUserId = currentUserRes.data?.id ?? "";
-  const permissionsResponse = await apiRequest<{
-    modules: Array<{
-      key: string;
-      permissions: { can_view: boolean; can_create: boolean; can_edit: boolean; can_delete: boolean };
-    }>;
-  }>("/api/v1/auth/permissions", { orgSlug, cache: "no-store" });
   const usersPerm = permissionsResponse.data?.modules.find((m) => m.key === "users")?.permissions ?? {
-    can_view: false,
-    can_create: false,
-    can_edit: false,
-    can_delete: false,
+    can_view: false, can_create: false, can_edit: false, can_delete: false,
   };
 
   if (!usersPerm.can_view) {
