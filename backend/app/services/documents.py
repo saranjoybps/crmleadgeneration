@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 from supabase import Client
-from xhtml2pdf import pisa
+from weasyprint import HTML
 
 from app.core.config import get_settings
 from app.core.deps import RequestContext
@@ -279,11 +279,7 @@ class DocumentsService:
 
     @staticmethod
     def _render_pdf_sync(full_html: str) -> bytes:
-        buf = BytesIO()
-        pdf = pisa.CreatePDF(full_html, dest=buf)
-        if pdf.err:
-            raise HTTPException(status_code=500, detail="PDF generation failed")
-        return buf.getvalue()
+        return HTML(string=full_html).write_pdf()
 
     @staticmethod
     async def download_pdf(supabase: Client, doc_id: str, ctx: RequestContext):
